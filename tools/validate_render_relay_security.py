@@ -48,6 +48,28 @@ def main() -> None:
     require(activity, '"BRIDGE" => HasLogCategory(row, "BRIDGE") || HasLogCategory(row, "RENDER")', "Render log filtering")
     require(activity, 'ServerPreferences.SaveBridge(this, true, websocket, CurrentServerId(), CurrentSecret())', "automatic relay persistence")
 
+    # Render provisioning is intentionally simplified: target workspace/region/plan
+    # are fixed and not exposed as user-editable selectors.
+    require(activity, 'private const string RenderWorkspaceName = "VoiceCraft By SamSoSleepy";', "fixed Render workspace")
+    require(activity, 'private const string RenderRegion = "Singapore";', "fixed Singapore region")
+    require(activity, 'private const string RenderPlan = "Free";', "fixed Free plan")
+    require(activity, 'string.Equals(item.Name?.Trim(), RenderWorkspaceName, StringComparison.OrdinalIgnoreCase)', "automatic workspace resolution")
+    require(activity, "workspace.Id,", "resolved workspace ID passed to Render")
+    require(activity, "RenderRegion,", "fixed region passed to Render")
+    require(activity, "RenderPlan,", "fixed plan passed to Render")
+    forbid(activity, r"_renderWorkspace\s*=\s*new\s+Spinner", "interactive Render workspace selector")
+    forbid(activity, r"_renderRegion\s*=\s*new\s+Spinner", "interactive Render region selector")
+    forbid(activity, r"_renderPlan\s*=\s*new\s+Spinner", "interactive Render plan selector")
+
+    # Dashboard identity uses the verified GitHub profile avatar, with an offline
+    # initials fallback so the page never depends on GitHub to render.
+    require(activity, "SamSoSleepy GitHub profile picture", "dashboard GitHub profile accessibility label")
+    require(activity, "https://avatars.githubusercontent.com/u/235958240?v=4", "SamSoSleepy GitHub avatar source")
+    require(activity, 'var profileFallback = Label("SS", 13, Primary, true);', "offline avatar fallback")
+    require(activity, "LoadDashboardProfileAvatarAsync(profileAvatar)", "non-blocking dashboard avatar loader")
+    require(activity, "profileAvatar.Visibility = ViewStates.Visible;", "avatar success state")
+    forbid(activity, r'var\s+vc\s*=\s*Pill\("VC"', "legacy VC dashboard badge")
+
     # Never persist, copy, or log the API-key variable.
     forbid(prefs, r"render\s*_?api\s*_?key|renderApiKey", "Render API key persistence", re.I)
     forbid(activity, r"ServerPreferences\.[A-Za-z0-9_]*(?:\([^\n]*_renderApiKey|_renderApiKey[^\n]*\))", "Render API key sent to preferences")
@@ -60,10 +82,12 @@ def main() -> None:
     manifest = (root / "release-manifest.json").read_text(encoding="utf-8")
     require(manifest, '"protocol": 1', "protocol 1 manifest")
 
-    print("Render provisioning security validation passed.")
+    print("Render provisioning and Dashboard identity validation passed.")
     print("- API key is session-only, wiped on destroy, and excluded from prefs/logs/clipboard")
+    print("- workspace is fixed to VoiceCraft By SamSoSleepy and resolved to its real Render ID")
+    print("- region is fixed to Singapore and plan is fixed to Free; no selectors remain")
+    print("- Dashboard uses SamSoSleepy's GitHub avatar with an SS offline fallback")
     print("- Render API requests stay on HTTPS api.render.com with redirects disabled")
-    print("- relay source/build/env settings are pinned to the expected VoiceCraft configuration")
     print("- Item Mic moderation gate and protocol 1 remain intact")
 
 
