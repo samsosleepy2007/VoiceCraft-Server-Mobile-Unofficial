@@ -57,6 +57,8 @@ class VoiceCraftEndstone(VoiceCraftEndstone027):
     def on_enable(self) -> None:
         self.save_default_config()
         cfg = self.reload_config().get("voice_range", {})
+        if not isinstance(cfg, dict):
+            cfg = {}
         self._voice_range_default = self._bounded(cfg.get("default_blocks", DEFAULT_RANGE), DEFAULT_RANGE)
         self._voice_range_max = self._bounded(cfg.get("max_blocks", DEFAULT_MAX), DEFAULT_MAX)
         self._voice_range_default = min(self._voice_range_default, self._voice_range_max)
@@ -82,11 +84,18 @@ class VoiceCraftEndstone(VoiceCraftEndstone027):
             if not self._range_store.exists():
                 return
             raw = json.loads(self._range_store.read_text(encoding="utf-8"))
-            if isinstance(raw, dict):
-                self._voice_ranges = {
-                    str(k): int(v) for k, v in raw.items()
-                    if str(k) and MIN_RANGE <= int(v) <= TECH_MAX
-                }
+            if not isinstance(raw, dict):
+                return
+            loaded: dict[str, int] = {}
+            for key, value in raw.items():
+                try:
+                    parsed = int(value)
+                except (TypeError, ValueError):
+                    continue
+                key = str(key)
+                if key and MIN_RANGE <= parsed <= TECH_MAX:
+                    loaded[key] = parsed
+            self._voice_ranges = loaded
         except Exception as exc:
             self.logger.warning(f"VOICE RANGE store load failed: {type(exc).__name__}: {exc}")
 
@@ -168,11 +177,20 @@ class VoiceCraftEndstone(VoiceCraftEndstone027):
         return True
 
     def _publish_tags(self, player: Player, value: int) -> None:
-        for tag in list(player.scoreboard_tags):
-            if tag.startswith(VALUE_PREFIX) or tag.startswith(MAX_PREFIX):
+        desired_value = f"{VALUE_PREFIX}{value}"
+        desired_max = f"{MAX_PREFIX}{self._voice_range_max}"
+        tags = set(player.scoreboard_tags)
+        for tag in tuple(tags):
+            if tag.startswith(VALUE_PREFIX) and tag != desired_value:
                 player.remove_scoreboard_tag(tag)
-        player.add_scoreboard_tag(f"{VALUE_PREFIX}{value}")
-        player.add_scoreboard_tag(f"{MAX_PREFIX}{self._voice_range_max}")
+                tags.discard(tag)
+            elif tag.startswith(MAX_PREFIX) and tag != desired_max:
+                player.remove_scoreboard_tag(tag)
+                tags.discard(tag)
+        if desired_value not in tags:
+            player.add_scoreboard_tag(desired_value)
+        if desired_max not in tags:
+            player.add_scoreboard_tag(desired_max)
 
     def _sync_player(self, player: Player, emit: bool) -> None:
         value = self._current_range(player)
@@ -288,6 +306,9 @@ class VoiceCraftEndstone(VoiceCraftEndstone027):
         old = self._voice_range_max
         self._voice_range_max = value
         section = self.config.setdefault("voice_range", {})
+        if not isinstance(section, dict):
+            section = {}
+            self.config["voice_range"] = section
         section["max_blocks"] = value
         self.save_config()
         for online in self.server.online_players:
