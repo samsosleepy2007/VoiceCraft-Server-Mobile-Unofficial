@@ -98,6 +98,10 @@ jobs:
           grep -q 'from .item_mic import VoiceCraftEndstone' VoiceCraft.Endstone/src/endstone_voicecraft/__init__.py
           grep -q 'version = "0.2.7"' VoiceCraft.Endstone/pyproject.toml
           test -f tools/build_item_mic_addon.py
+          grep -q 'RenderApiClient' VoiceCraft.Server.Android/ModernMainActivity.cs
+          grep -q 'VoiceCraft by SamSoSleepy' VoiceCraft.Server.Android/ModernMainActivity.cs
+          grep -q 'BACKUP RELAY • LOCKED' VoiceCraft.Server.Android/ModernMainActivity.cs
+          grep -q 'FindServiceByNameAsync' VoiceCraft.Server.Android/RenderApiClient.cs
 
       - name: Setup .NET 10
         uses: actions/setup-dotnet@v4
@@ -135,7 +139,7 @@ jobs:
           mkdir -p release-assets
           signed=$(find VoiceCraft.Server.Android/bin/Release/net10.0-android/android-arm64/publish -maxdepth 1 -name '*-Signed.apk' -print -quit)
           test -n "$signed"
-          cp "$signed" release-assets/VoiceCraft-Server-Mobile-UI4.5.2-ItemMic-AccountV2-arm64-Signed.apk
+          cp "$signed" release-assets/VoiceCraft-Server-Mobile-UI5-RenderAPI-arm64-Signed.apk
 
       - name: Scan APK for removed privileged-account client markers
         shell: bash
@@ -143,7 +147,7 @@ jobs:
           set -euo pipefail
           rm -rf apk-scan
           mkdir apk-scan
-          unzip -q release-assets/VoiceCraft-Server-Mobile-UI4.5.2-ItemMic-AccountV2-arm64-Signed.apk -d apk-scan
+          unzip -q release-assets/VoiceCraft-Server-Mobile-UI5-RenderAPI-arm64-Signed.apk -d apk-scan
           if grep -R -a -E -i \
             'AdminMfaSetupRequired|adminMfaSetupRequired|/v1/admin|x-admin-otp|MFA_REQUIRED|ADMIN_REQUIRED|voicecraft-account' \
             apk-scan; then
@@ -224,6 +228,7 @@ jobs:
           Release tag: ${RELEASE_TAG}
           Release commit: ${GITHUB_SHA}
           Android: 1.7.1-android-phase2-ui4.5.2-account-v2-guest (version code 13)
+          UI release: UI5 + Render API provisioning
           Endstone: 0.2.7
           Item Mic addon: 2.2.0
           Relay: 0.2.1
@@ -241,7 +246,7 @@ jobs:
           (
             cd release-assets
             sha256sum \
-              VoiceCraft-Server-Mobile-UI4.5.2-ItemMic-AccountV2-arm64-Signed.apk \
+              VoiceCraft-Server-Mobile-UI5-RenderAPI-arm64-Signed.apk \
               endstone_voicecraft-0.2.7-py3-none-any.whl \
               VoiceCraft_ItemMic_v2.2.0.mcaddon \
               GPL-3.0.txt \
@@ -250,41 +255,63 @@ jobs:
               > SHA256SUMS.txt
           )
           cat > release-notes.md <<'EOF'
-          ## VoiceCraft Server Mobile UI4.5.2 + Item Mic
+          ## VoiceCraft Server Mobile UI5 + Render API Provisioning
 
-          This release promotes the tested Item Mic integration and the hardened GitHub plugin downloader.
+          This release promotes the tested UI5 redesign and the new in-app Render Relay provisioning flow to `main`.
+
+          ### New: Render API provisioning
+          - Create a VoiceCraft Render Web Service directly from the Android app with a temporary Render API key.
+          - The API key is session-only: it is not saved to preferences, copied with setup data, or intentionally written to Runtime Logs.
+          - The app automatically selects an accessible Render workspace.
+          - Service configuration is fixed to `VoiceCraft by SamSoSleepy`, Singapore region and the Render Free plan.
+          - Relay runtime is pinned to Node.js with `VoiceCraft.Bridge.Relay`, `npm install --omit=dev`, `npm start`, `/health` and `BRIDGE_SECRET`.
+          - A missing/short Bridge Secret is generated automatically.
+          - Deploy status is followed until LIVE/failed/timeout.
+          - A LIVE `https://...onrender.com` URL is converted automatically to `wss://...onrender.com/bridge`.
+
+          ### Primary / Backup Relay management
+          - After connecting Render, choose whether the new service is for Primary or Backup Relay.
+          - Free VoiceCraft accounts can use Primary only; Backup is locked unless the account entitlement allows `backupRelays`.
+          - Premium/Admin-capable accounts can provision Backup Relay.
+          - Existing Primary or Backup configuration is replaced only after the new Render service becomes LIVE.
+          - Failed or timed-out deployments keep the current working Relay unchanged.
+
+          ### Duplicate protection
+          - The app checks the connected Render account for an existing `VoiceCraft by SamSoSleepy` service before creating another one.
+          - Duplicate automatic provisioning is blocked and the user is instructed to use another Render account with a new API key when another Relay is required.
+
+          ### UI5 redesign
+          - Refreshed Server Dashboard, Server Setup, Runtime Logs and App Settings for mobile.
+          - Dashboard identity now uses the SamSoSleepy GitHub profile avatar with an offline `SS` fallback.
+          - Manual Render URL setup remains available alongside the automated Render API flow.
+          - Render provisioning state and Relay controls are integrated into Server Setup.
+
+          ### Runtime logs and McHttp
+          - Semantic Runtime Log colors: success/online states are green, warnings/reconnect/failover are amber, errors are red and normal informational output is neutral.
+          - Expected unauthenticated McHttp probe responses such as `HTTP/1.1 403 Forbidden` remain neutral because they still prove that McHttp is responding.
+          - Actual Relay/Bridge authentication failures remain errors.
+
+          ### Existing functionality preserved
+          - Primary + Backup Render relay failover and in-game failover status messages.
+          - Endstone VoiceCraft `0.2.7` and Item Mic `2.2.0` integration.
+          - Item Mic remains an additional audio gate and cannot bypass normal/admin mute state.
+          - Real `/vc` bind/unbind and automatic rebind handling.
+          - Device-local Free Account plus registered accounts.
+          - Premium/Admin gating for Backup Render Relay.
+          - Foreground service, wake lock and unrestricted-battery request support.
+          - Open Source & Legal attribution and corresponding source archive.
 
           ### Versions
-          - VoiceCraft Server: `1.7.1-android-phase2-ui4.5.2-account-v2-guest` (version code `13`)
+          - VoiceCraft Android internal display version: `1.7.1-android-phase2-ui4.5.2-account-v2-guest` (version code `13`)
+          - UI release generation: `UI5 + Render API provisioning`
           - Endstone VoiceCraft: `0.2.7`
           - VoiceCraft Item Mic addon: `2.2.0`
           - Render Relay: `0.2.1`
           - Bridge protocol: `1`
           - VoiceCraft upstream: `v1.7.1`
 
-          ### Item Mic
-          - Mic state is integrated into the main Endstone VoiceCraft plugin; the old separate Item Mic wheel is no longer required.
-          - Hold-to-Talk, Toggle and offhand always-on modes are supported.
-          - Item Mic state is forwarded through the existing protocol-1 player-state path.
-          - VoiceCraft Server applies an independent Item Mic audio gate, so the item cannot override administrator/server mute state.
-          - The BP, RP and VoiceCraft Server app use the VoiceCraft Server logo.
-
-          ### Plugin download
-          - The app resolves the newest compatible published Endstone plugin from GitHub Release metadata.
-          - The downloader validates protocol compatibility, exact wheel version/name and SHA-256 before provisioning config.
-          - Relay URL, Server ID, backup relays and Bridge Secret are injected automatically.
-
-          ### Existing functionality preserved
-          - Primary + Backup Render relay failover.
-          - Real `/vc` bind/unbind and automatic rebind handling.
-          - Device-local Free Account plus registered accounts.
-          - Premium/Admin gating for Backup Render Relay.
-          - Thai locale auto-selection only on Thai devices; other locales default to English.
-          - Foreground service, wake lock and unrestricted-battery request support.
-          - Open Source & Legal attribution and corresponding source archive.
-
           ### Assets
-          - `VoiceCraft-Server-Mobile-UI4.5.2-ItemMic-AccountV2-arm64-Signed.apk`
+          - `VoiceCraft-Server-Mobile-UI5-RenderAPI-arm64-Signed.apk`
           - `endstone_voicecraft-0.2.7-py3-none-any.whl`
           - `VoiceCraft_ItemMic_v2.2.0.mcaddon`
           - `VoiceCraft-Server-Mobile-...-Corresponding-Source.zip`
@@ -299,10 +326,10 @@ jobs:
         if: github.ref != 'refs/heads/main'
         uses: actions/upload-artifact@v4
         with:
-          name: VoiceCraft-Release-Candidate-ItemMic-0.2.7
+          name: VoiceCraft-Release-Candidate-UI5-RenderAPI
           if-no-files-found: error
           path: |
-            release-assets/VoiceCraft-Server-Mobile-UI4.5.2-ItemMic-AccountV2-arm64-Signed.apk
+            release-assets/VoiceCraft-Server-Mobile-UI5-RenderAPI-arm64-Signed.apk
             release-assets/endstone_voicecraft-0.2.7-py3-none-any.whl
             release-assets/VoiceCraft_ItemMic_v2.2.0.mcaddon
             release-assets/SHA256SUMS.txt

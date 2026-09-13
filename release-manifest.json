@@ -1,6 +1,6 @@
 {
-  "tag": "v1.7.1-android-phase2-ui4.5.2-account-v2-guest-endstone0.2.7-relay0.2.1-itemmic2.2.0",
-  "title": "VoiceCraft Server Mobile UI4.5.2 + Endstone 0.2.7 + Item Mic 2.2.0",
+  "tag": "v1.7.1-android-phase2-ui5-render-api-endstone0.2.7-relay0.2.1-itemmic2.2.0",
+  "title": "VoiceCraft Server Mobile UI5 + Render API Provisioning",
   "android": {
     "display_version": "1.7.1-android-phase2-ui4.5.2-account-v2-guest",
     "version_code": 13

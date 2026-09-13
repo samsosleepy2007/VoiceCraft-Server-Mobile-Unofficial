@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from pathlib import Path
 import re
+import subprocess
 import sys
 
 DISPLAY_VERSION = "1.7.1-android-phase2-ui4.5.2-account-v2-guest"
@@ -16,7 +17,6 @@ def sub_required(text: str, pattern: str, replacement: str, label: str) -> str:
 
 def patch_main_activity(path: Path) -> None:
     text = path.read_text(encoding="utf-8")
-
     if "ShowOpenSourceLegal" not in text:
         account_action = '''        app.AddView(SettingsAction(
             T("บัญชี", "Account"),
@@ -53,12 +53,9 @@ def patch_main_activity(path: Path) -> None:
         new AlertDialog.Builder(this)
             .SetTitle(T("โอเพนซอร์สและข้อกำหนด", "Open Source & Legal"))
             .SetMessage(message)
-            .SetPositiveButton(T("SOURCE โปรเจกต์", "PROJECT SOURCE"), (_, _) =>
-                OpenLegalUrl("https://github.com/samsosleepy2007/VoiceCraft-Server-Mobile-Unofficial"))
-            .SetNeutralButton(T("VOICECRAFT ต้นฉบับ", "VOICECRAFT UPSTREAM"), (_, _) =>
-                OpenLegalUrl("https://github.com/AvionBlock/VoiceCraft"))
-            .SetNegativeButton("GPL-3.0", (_, _) =>
-                OpenLegalUrl("https://github.com/samsosleepy2007/VoiceCraft-Server-Mobile-Unofficial/blob/main/LICENSE.md"))
+            .SetPositiveButton(T("SOURCE โปรเจกต์", "PROJECT SOURCE"), (_, _) => OpenLegalUrl("https://github.com/samsosleepy2007/VoiceCraft-Server-Mobile-Unofficial"))
+            .SetNeutralButton(T("VOICECRAFT ต้นฉบับ", "VOICECRAFT UPSTREAM"), (_, _) => OpenLegalUrl("https://github.com/AvionBlock/VoiceCraft"))
+            .SetNegativeButton("GPL-3.0", (_, _) => OpenLegalUrl("https://github.com/samsosleepy2007/VoiceCraft-Server-Mobile-Unofficial/blob/main/LICENSE.md"))
             .Show();
     }
 
@@ -80,33 +77,28 @@ def patch_main_activity(path: Path) -> None:
         if marker not in text:
             raise RuntimeError("Could not apply legal compliance patch: ShowInformation marker")
         text = text.replace(marker, legal_methods + marker, 1)
-
     path.write_text(text, encoding="utf-8")
 
 
 def patch_version(android: Path) -> None:
     csproj = android / "VoiceCraft.Server.Android.csproj"
     text = csproj.read_text(encoding="utf-8")
-    text = re.sub(
-        r"<ApplicationVersion>\d+</ApplicationVersion>",
-        f"<ApplicationVersion>{VERSION_CODE}</ApplicationVersion>",
-        text,
-    )
-    text = re.sub(
-        r"<ApplicationDisplayVersion>[^<]+</ApplicationDisplayVersion>",
-        f"<ApplicationDisplayVersion>{DISPLAY_VERSION}</ApplicationDisplayVersion>",
-        text,
-    )
+    text = re.sub(r"<ApplicationVersion>\d+</ApplicationVersion>", f"<ApplicationVersion>{VERSION_CODE}</ApplicationVersion>", text)
+    text = re.sub(r"<ApplicationDisplayVersion>[^<]+</ApplicationDisplayVersion>", f"<ApplicationDisplayVersion>{DISPLAY_VERSION}</ApplicationDisplayVersion>", text)
     csproj.write_text(text, encoding="utf-8")
 
-    version_pattern = re.compile(
-        r"1\.7\.1-android-phase2-ui4\.[0-9]+(?:\.[0-9]+)?(?:-[A-Za-z0-9._-]+)?"
-    )
+    version_pattern = re.compile(r"1\.7\.1-android-phase2-ui4\.[0-9]+(?:\.[0-9]+)?(?:-[A-Za-z0-9._-]+)?")
     for path in android.glob("*.cs"):
         source = path.read_text(encoding="utf-8")
         changed = version_pattern.sub(DISPLAY_VERSION, source)
         if changed != source:
             path.write_text(changed, encoding="utf-8")
+
+
+def run_if_present(repo: Path, relative: str) -> None:
+    script = repo / relative
+    if script.exists():
+        subprocess.run([sys.executable, str(script), str(repo)], check=True)
 
 
 def main() -> None:
@@ -118,13 +110,23 @@ def main() -> None:
     android = repo / "VoiceCraft.Server.Android"
     if not android.is_dir():
         raise SystemExit(f"Android project not found: {android}")
-
     main_activity = android / "ModernMainActivity.cs"
     if not main_activity.exists():
         raise SystemExit(f"ModernMainActivity not found: {main_activity}")
 
     patch_main_activity(main_activity)
     patch_version(android)
+
+    run_if_present(repo, "tools/apply_ui5_figma_redesign.py")
+    run_if_present(repo, "tools/fix_ui5_generated_newlines.py")
+    run_if_present(repo, "tools/apply_ui5_refinement.py")
+    run_if_present(repo, "tools/apply_ui5_polish.py")
+    run_if_present(repo, "tools/apply_dashboard_profile_avatar.py")
+    run_if_present(repo, "tools/apply_render_api_core.py")
+    run_if_present(repo, "tools/apply_render_relay_setup.py")
+    run_if_present(repo, "tools/apply_render_security_hardening.py")
+    run_if_present(repo, "tools/fix_ui5_generated_newlines.py")
+    run_if_present(repo, "tools/validate_render_relay_security.py")
 
     print("Legal/Open Source patch applied.")
     print(f"Android display version: {DISPLAY_VERSION}")

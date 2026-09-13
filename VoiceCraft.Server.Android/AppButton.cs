@@ -42,7 +42,6 @@ internal sealed class Button : global::Android.Widget.Button
     public override bool PerformClick()
     {
         var label = string.IsNullOrWhiteSpace(Text) ? "(unnamed)" : Text;
-        AndroidRuntimeLog.Append("UI", $"CLICK: {label}");
 
         try
         {
@@ -50,6 +49,7 @@ internal sealed class Button : global::Android.Widget.Button
         }
         catch (Exception ex)
         {
+            // Keep failures diagnosable without recording routine button presses.
             AndroidRuntimeLog.Append(
                 "UI",
                 $"ACTION ERROR button={label}: {ex.GetType().Name}: {ex.Message}");
