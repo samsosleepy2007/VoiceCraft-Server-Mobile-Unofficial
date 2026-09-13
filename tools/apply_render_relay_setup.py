@@ -15,11 +15,11 @@ def main() -> None:
     text = path.read_text(encoding="utf-8")
 
     fields_anchor = "    private TextView? _configPreview;\n"
-    fields = fields_anchor + '''    private EditText? _renderApiKey;
-    private Spinner? _renderWorkspace;
+    fields = fields_anchor + '''    private const string RenderWorkspaceName = "VoiceCraft By SamSoSleepy";
+    private const string RenderRegion = "Singapore";
+    private const string RenderPlan = "Free";
+    private EditText? _renderApiKey;
     private EditText? _renderServiceName;
-    private Spinner? _renderRegion;
-    private Spinner? _renderPlan;
     private TextView? _renderProvisionStatus;
     private Button? _renderConnect;
     private Button? _renderCreate;
@@ -42,6 +42,10 @@ def main() -> None:
             T("สร้าง Web Service สำหรับ VoiceCraft Relay จากในแอป โดย API Key ใช้เฉพาะ session นี้และจะไม่ถูกบันทึก", "Create the VoiceCraft Relay Web Service from the app. The API key is used only for this session and is never saved."),
             11,
             Muted));
+        renderCreate.AddView(Label(
+            T("Workspace: VoiceCraft By SamSoSleepy • Region: Singapore • Plan: Free", "Workspace: VoiceCraft By SamSoSleepy • Region: Singapore • Plan: Free"),
+            10,
+            Muted), Top(Dp(6)));
 
         renderCreate.AddView(InputLabel("Render API Key"));
         _renderApiKey = Input(string.Empty, InputTypes.ClassText | InputTypes.TextVariationPassword);
@@ -54,28 +58,10 @@ def main() -> None:
         renderConnectRow.AddView(_renderConnect, new LinearLayout.LayoutParams(0, Dp(48), 1f) { LeftMargin = Dp(3), RightMargin = Dp(3) });
         renderCreate.AddView(renderConnectRow);
 
-        renderCreate.AddView(InputLabel(T("Workspace", "Workspace")));
-        _renderWorkspace = new Spinner(this) { Background = Round(SurfaceSoft, 14, Border) };
-        _renderWorkspace.SetPadding(Dp(10), 0, Dp(10), 0);
-        SetRenderSpinnerItems(_renderWorkspace, new[] { T("เชื่อมต่อ Render ก่อน", "Connect to Render first") });
-        renderCreate.AddView(_renderWorkspace, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MatchParent, Dp(52)));
-
         renderCreate.AddView(InputLabel(T("ชื่อ Service", "Service Name")));
         _renderServiceName = Input("voicecraft-relay-" + Guid.NewGuid().ToString("N")[..6], InputTypes.ClassText);
         _renderServiceName.Hint = "voicecraft-relay-name";
         renderCreate.AddView(_renderServiceName);
-
-        renderCreate.AddView(InputLabel(T("Region", "Region")));
-        _renderRegion = new Spinner(this) { Background = Round(SurfaceSoft, 14, Border) };
-        _renderRegion.SetPadding(Dp(10), 0, Dp(10), 0);
-        SetRenderSpinnerItems(_renderRegion, new[] { "Singapore", "Oregon", "Frankfurt", "Ohio", "Virginia" });
-        renderCreate.AddView(_renderRegion, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MatchParent, Dp(52)));
-
-        renderCreate.AddView(InputLabel(T("Plan", "Plan")));
-        _renderPlan = new Spinner(this) { Background = Round(SurfaceSoft, 14, Border) };
-        _renderPlan.SetPadding(Dp(10), 0, Dp(10), 0);
-        SetRenderSpinnerItems(_renderPlan, new[] { "Free" });
-        renderCreate.AddView(_renderPlan, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MatchParent, Dp(52)));
 
         _renderCreate = MakeButton(T("สร้าง Web Service", "CREATE WEB SERVICE"), primary: true);
         WireButton(_renderCreate, CreateRenderRelayService);
@@ -86,7 +72,7 @@ def main() -> None:
         renderCreate.AddView(renderCreateRow);
 
         _renderProvisionStatus = Label(
-            T("ใส่ API Key แล้วกดเชื่อมต่อเพื่อเลือก Workspace", "Enter an API key and connect to load your workspaces"),
+            T("ใส่ API Key แล้วกดเชื่อมต่อ ระบบจะเลือก Workspace VoiceCraft By SamSoSleepy ให้อัตโนมัติ", "Enter an API key and connect. VoiceCraft By SamSoSleepy will be selected automatically."),
             10,
             Muted);
         renderCreate.AddView(_renderProvisionStatus, Top(Dp(8)));
@@ -100,15 +86,7 @@ def main() -> None:
     if methods_anchor not in text:
         methods_anchor = "    private void ShowInformation()\n"
 
-    methods = r'''    private void SetRenderSpinnerItems(Spinner spinner, IEnumerable<string> items)
-    {
-        var values = items.ToArray();
-        var adapter = new ArrayAdapter<string>(this, global::Android.Resource.Layout.SimpleSpinnerItem, values);
-        adapter.SetDropDownViewResource(global::Android.Resource.Layout.SimpleSpinnerDropDownItem);
-        spinner.Adapter = adapter;
-    }
-
-    private void SetRenderProvisionStatus(string text, Color color)
+    methods = r'''    private void SetRenderProvisionStatus(string text, Color color)
     {
         if (_renderProvisionStatus == null)
             return;
@@ -139,30 +117,35 @@ def main() -> None:
             _renderConnect.Alpha = 0.55f;
         }
         SetRenderCreateEnabled(false);
-        SetRenderProvisionStatus(T("กำลังตรวจสอบบัญชี Render…", "Checking your Render account…"), Amber);
+        SetRenderProvisionStatus(T("กำลังตรวจสอบบัญชี Render และค้นหา Workspace…", "Checking your Render account and locating the workspace…"), Amber);
 
         try
         {
             var workspaces = await RenderApiClient.ListWorkspacesAsync(apiKey);
-            _renderWorkspaceOptions = workspaces;
-            if (_renderWorkspace != null)
+            var workspace = workspaces.FirstOrDefault(item =>
+                string.Equals(item.Name?.Trim(), RenderWorkspaceName, StringComparison.OrdinalIgnoreCase));
+
+            if (workspace == null)
             {
-                var labels = workspaces.Select(workspace => string.IsNullOrWhiteSpace(workspace.Email)
-                    ? workspace.Name
-                    : $"{workspace.Name} • {workspace.Email}").ToArray();
-                SetRenderSpinnerItems(_renderWorkspace, labels);
+                _renderWorkspaceOptions = Array.Empty<RenderWorkspaceOption>();
+                SetRenderCreateEnabled(false);
+                SetRenderProvisionStatus(
+                    T("ไม่พบ Workspace 'VoiceCraft By SamSoSleepy' ในบัญชี Render นี้", "Workspace 'VoiceCraft By SamSoSleepy' was not found in this Render account."),
+                    Red);
+                AndroidRuntimeLog.Append("RENDER", $"Render account connected but target workspace was not found; workspaces={workspaces.Count}; API key hidden");
+                return;
             }
-            SetRenderCreateEnabled(workspaces.Count > 0);
+
+            _renderWorkspaceOptions = new[] { workspace };
+            SetRenderCreateEnabled(true);
             SetRenderProvisionStatus(
-                T($"เชื่อมต่อ Render สำเร็จ • พบ {workspaces.Count} Workspace", $"Connected to Render • {workspaces.Count} workspace(s) found"),
+                T("เชื่อมต่อ Render สำเร็จ • ใช้ Workspace VoiceCraft By SamSoSleepy", "Connected to Render • using VoiceCraft By SamSoSleepy"),
                 Green);
-            AndroidRuntimeLog.Append("RENDER", $"Render account connected; workspaces={workspaces.Count}; API key hidden");
+            AndroidRuntimeLog.Append("RENDER", $"Render account connected; target workspace selected automatically; workspaces={workspaces.Count}; API key hidden");
         }
         catch (RenderApiException ex)
         {
             _renderWorkspaceOptions = Array.Empty<RenderWorkspaceOption>();
-            if (_renderWorkspace != null)
-                SetRenderSpinnerItems(_renderWorkspace, new[] { T("ยังไม่มี Workspace", "No workspace loaded") });
             SetRenderProvisionStatus(ex.Message, Red);
             AndroidRuntimeLog.Append("RENDER", $"Render account connection failed: {ex.Message}; API key hidden");
         }
@@ -191,16 +174,15 @@ def main() -> None:
             return;
         }
 
-        var workspaceIndex = _renderWorkspace?.SelectedItemPosition ?? -1;
-        if (workspaceIndex < 0 || workspaceIndex >= _renderWorkspaceOptions.Count)
+        if (_renderWorkspaceOptions.Count != 1)
         {
-            SetRenderProvisionStatus(T("เลือก Workspace ก่อน", "Select a workspace first"), Red);
+            SetRenderProvisionStatus(
+                T("ยังไม่พบ Workspace VoiceCraft By SamSoSleepy กรุณาเชื่อมต่อ Render ใหม่", "VoiceCraft By SamSoSleepy is not available. Connect to Render again."),
+                Red);
             return;
         }
 
         var serviceName = _renderServiceName?.Text?.Trim() ?? string.Empty;
-        var region = _renderRegion?.SelectedItem?.ToString() ?? "Singapore";
-        var plan = _renderPlan?.SelectedItem?.ToString() ?? "Free";
         var secret = _bridgeSecret?.Text?.Trim() ?? string.Empty;
         if (secret.Length < 16)
         {
@@ -222,11 +204,18 @@ def main() -> None:
 
         try
         {
-            var workspace = _renderWorkspaceOptions[workspaceIndex];
-            var created = await RenderApiClient.CreateRelayServiceAsync(apiKey, workspace.Id, serviceName, region, plan, secret, token);
+            var workspace = _renderWorkspaceOptions[0];
+            var created = await RenderApiClient.CreateRelayServiceAsync(
+                apiKey,
+                workspace.Id,
+                serviceName,
+                RenderRegion,
+                RenderPlan,
+                secret,
+                token);
             _renderCreatedServiceId = created.Id;
             _renderCreatedServiceUrl = created.Url;
-            AndroidRuntimeLog.Append("RENDER", $"Relay service created id={created.Id} name={created.Name}; Bridge Secret hidden");
+            AndroidRuntimeLog.Append("RENDER", $"Relay service created id={created.Id} name={created.Name}; workspace fixed; region=Singapore; plan=free; Bridge Secret hidden");
             await MonitorRenderRelayDeployAsync(apiKey, created, token);
         }
         catch (OperationCanceledException)
@@ -337,6 +326,9 @@ def main() -> None:
     path.write_text(text, encoding="utf-8")
     final = path.read_text(encoding="utf-8")
     required = [
+        'private const string RenderWorkspaceName = "VoiceCraft By SamSoSleepy";',
+        'private const string RenderRegion = "Singapore";',
+        'private const string RenderPlan = "Free";',
         "RenderApiClient.CreateRelayServiceAsync(",
         "RenderApiClient.GetLatestDeployAsync(",
         "RenderApiClient.GetServiceAsync(",
@@ -347,7 +339,18 @@ def main() -> None:
     if missing:
         raise RuntimeError(f"Render setup UI validation failed: {missing}")
 
+    forbidden = [
+        "_renderWorkspace = new Spinner",
+        "_renderRegion = new Spinner",
+        "_renderPlan = new Spinner",
+    ]
+    present = [value for value in forbidden if value in final]
+    if present:
+        raise RuntimeError(f"Render fixed defaults validation failed: interactive selectors still present: {present}")
+
     print(f"Applied Render Relay provisioning UI to {path}")
+    print("- target workspace fixed to VoiceCraft By SamSoSleepy and resolved automatically by ID")
+    print("- region fixed to Singapore and plan fixed to Free")
     print("- creates the web service and generated Bridge Secret")
     print("- follows the initial deploy until live/failed")
     print("- auto-configures https://...onrender.com -> wss://.../bridge")
