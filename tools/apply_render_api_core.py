@@ -68,6 +68,34 @@ internal static class RenderApiClient
         return result;
     }
 
+    internal static async Task<RenderCreatedService?> FindServiceByNameAsync(
+        string apiKey,
+        string serviceName,
+        CancellationToken cancellationToken = default)
+    {
+        ValidateApiKey(apiKey);
+        serviceName = serviceName.Trim();
+        if (serviceName.Length == 0)
+            throw new RenderApiException("Render service name is required.");
+
+        var query = "services?name=" + Uri.EscapeDataString(serviceName)
+            + "&type=web_service&includePreviews=false&limit=100";
+        using var document = await SendJsonAsync(HttpMethod.Get, query, apiKey, null, cancellationToken);
+        if (document.RootElement.ValueKind != JsonValueKind.Array)
+            throw new RenderApiException("Render returned an unexpected service list response.");
+
+        foreach (var item in document.RootElement.EnumerateArray())
+        {
+            var service = UnwrapObject(item, "service");
+            var name = ReadString(service, "name");
+            if (!string.Equals(name?.Trim(), serviceName, StringComparison.OrdinalIgnoreCase))
+                continue;
+            return ParseService(item, serviceName);
+        }
+
+        return null;
+    }
+
     internal static async Task<RenderCreatedService> CreateRelayServiceAsync(
         string apiKey,
         string ownerId,
@@ -81,9 +109,9 @@ internal static class RenderApiClient
         if (string.IsNullOrWhiteSpace(ownerId))
             throw new RenderApiException("Select a Render workspace first.");
 
-        serviceName = serviceName.Trim().ToLowerInvariant();
-        if (serviceName.Length is < 2 or > 63 || serviceName.Any(ch => !(char.IsAsciiLetterOrDigit(ch) || ch == '-')))
-            throw new RenderApiException("Service name can use only letters, numbers, and hyphens.");
+        serviceName = serviceName.Trim();
+        if (serviceName.Length is < 2 or > 100)
+            throw new RenderApiException("Render service name must contain 2 to 100 characters.");
 
         region = NormalizeRegion(region);
         plan = NormalizePlan(plan);
@@ -309,7 +337,7 @@ def main() -> None:
     target.write_text(RENDER_API_CLIENT, encoding="utf-8")
     print(f"Generated Render API core client: {target}")
     print("- session-only Bearer API key; redirects blocked")
-    print("- workspace discovery, web-service creation, deploy status and service retrieval")
+    print("- workspace discovery, duplicate-service lookup, web-service creation, deploy status and service retrieval")
     print("- relay source pinned to stable main branch with BRIDGE_SECRET env var")
 
 
