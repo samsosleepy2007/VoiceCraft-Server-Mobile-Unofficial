@@ -68,6 +68,51 @@ internal static class BackupRelayPremiumGate
         Timeout = TimeSpan.FromSeconds(15)
     };
 
+    internal static async Task<bool> CanUseBackupRelayAsync(Context context)
+    {
+        if (!RegisteredSessionStore.TryLoad(context, out var session) || session == null)
+            return false;
+
+        try
+        {
+            using var request = new HttpRequestMessage(
+                HttpMethod.Get,
+                AccountApiConfig.AccountApiBase + "/v1/entitlements");
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", session.Token);
+
+            using var response = await Http.SendAsync(request);
+            var text = await response.Content.ReadAsStringAsync();
+
+            if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+            {
+                RegisteredSessionStore.Delete(context);
+                AndroidRuntimeLog.Append("ACCOUNT", "Backup relay entitlement session expired");
+                return false;
+            }
+
+            if (!response.IsSuccessStatusCode)
+            {
+                AndroidRuntimeLog.Append("ACCOUNT", $"Backup relay entitlement returned HTTP {(int)response.StatusCode}");
+                return false;
+            }
+
+            using var doc = JsonDocument.Parse(text);
+            var allowed = doc.RootElement.TryGetProperty("capabilities", out var capabilities)
+                && capabilities.TryGetProperty("backupRelays", out var backupRelays)
+                && backupRelays.ValueKind == JsonValueKind.True;
+
+            AndroidRuntimeLog.Append("ACCOUNT", allowed
+                ? "Backup relay entitlement available"
+                : "Backup relay entitlement unavailable");
+            return allowed;
+        }
+        catch (Exception ex)
+        {
+            AndroidRuntimeLog.Append("ACCOUNT", $"Backup relay entitlement check failed: {ex.GetType().Name}");
+            return false;
+        }
+    }
+
     public static async Task<bool> VerifyOrCloseAsync(Activity activity)
     {
         var thai = ServerPreferences.GetLanguage(activity) == "th";
