@@ -121,6 +121,7 @@ def main() -> None:
     run_if_present(repo, "tools/fix_ui5_generated_newlines.py")
     run_if_present(repo, "tools/apply_ui5_refinement.py")
     run_if_present(repo, "tools/apply_ui5_polish.py")
+    run_if_present(repo, "tools/apply_dashboard_profile_avatar.py")
     run_if_present(repo, "tools/apply_render_api_core.py")
     run_if_present(repo, "tools/apply_render_relay_setup.py")
     run_if_present(repo, "tools/apply_render_security_hardening.py")
