@@ -1,0 +1,152 @@
+name: Build Voice Range V1
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [voice-range-v1]
+    paths:
+      - "VoiceCraft.Endstone/**"
+      - "tools/apply_voice_range_patch.py"
+      - "tools/build_item_mic_voice_range_addon.py"
+      - ".github/workflows/build-voice-range.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "VoiceCraft.Endstone/**"
+      - "tools/apply_voice_range_patch.py"
+      - "tools/build_item_mic_voice_range_addon.py"
+      - ".github/workflows/build-voice-range.yml"
+
+jobs:
+  build-voice-range:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout repository and VoiceCraft v1.7.1 submodule
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Verify pinned upstream
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C VoiceCraft.Upstream rev-parse HEAD)" = "85aaccccbb58adb23e8c87144e8b1c24bf4b2011"
+
+      - name: Apply Android runtime patches
+        shell: bash
+        run: |
+          set -euo pipefail
+          python tools/apply_phase1.py VoiceCraft.Upstream
+          python tools/apply_android_console_fix.py VoiceCraft.Upstream
+          python tools/apply_android_tcp_mchttp.py VoiceCraft.Upstream
+          python tools/apply_bridge_runtime.py VoiceCraft.Upstream
+          python VoiceCraft.Guest.Patch/apply_guest_account_patch.py .
+          python tools/apply_item_mic_bridge_patch.py .
+          python tools/apply_voice_range_patch.py .
+          python VoiceCraft.Guest.Patch/apply_legal_compliance_patch.py .
+
+      - name: Validate Voice Range integration
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q 'from .voice_range import VoiceCraftEndstone' VoiceCraft.Endstone/src/endstone_voicecraft/__init__.py
+          grep -q 'version = "0.2.8"' VoiceCraft.Endstone/src/endstone_voicecraft/voice_range.py
+          grep -q '"vc"' VoiceCraft.Endstone/src/endstone_voicecraft/voice_range.py
+          grep -q 'voicecraft.command.voice_range_admin' VoiceCraft.Endstone/src/endstone_voicecraft/voice_range.py
+          grep -q 'DEFAULT_MAX = 150' VoiceCraft.Endstone/src/endstone_voicecraft/voice_range.py
+          grep -q 'message\["voiceRange"\]' VoiceCraft.Endstone/src/endstone_voicecraft/voice_range.py
+          grep -q 'default_blocks = 20' VoiceCraft.Endstone/src/endstone_voicecraft/config.toml
+          grep -q 'max_blocks = 150' VoiceCraft.Endstone/src/endstone_voicecraft/config.toml
+          grep -q 'ProximityMaxRangeProperty = "ProximityEffect:MaxRange"' VoiceCraft.Server.Android/EndstoneBridgeController.cs
+          grep -q 'float? VoiceRange' VoiceCraft.Server.Android/EndstoneBridgeController.cs
+          grep -q 'root.TryGetProperty("voiceRange"' VoiceCraft.Server.Android/EndstoneBridgeController.cs
+          grep -q 'state.VoiceRange.HasValue' VoiceCraft.Server.Android/EndstoneBridgeController.cs
+          grep -q 'one loud player cannot expand another' VoiceCraft.Upstream/VoiceCraft.Network/Audio/Effects/ProximityEffect.cs
+          grep -q 'networkEntity.Muted || networkEntity.ServerMuted || itemMicMuted' VoiceCraft.Upstream/VoiceCraft.Network/Servers/VoiceCraftServer.cs
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android API 36
+        shell: bash
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platform-tools" "platforms;android-36" "build-tools;36.0.0"
+
+      - name: Install .NET Android workload
+        run: dotnet workload install android
+
+      - name: Build Android ARM64 APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          dotnet restore VoiceCraft.Server.Android/VoiceCraft.Server.Android.csproj
+          dotnet build VoiceCraft.Server.Android/VoiceCraft.Server.Android.csproj -c Release --no-restore
+          dotnet publish VoiceCraft.Server.Android/VoiceCraft.Server.Android.csproj -c Release -r android-arm64 --no-restore
+          mkdir -p test-assets
+          signed=$(find VoiceCraft.Server.Android/bin/Release/net10.0-android/android-arm64/publish -maxdepth 1 -name '*-Signed.apk' -print -quit)
+          test -n "$signed"
+          cp "$signed" test-assets/VoiceCraft-Server-Mobile-VoiceRangeV1-arm64-Signed.apk
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Build Endstone 0.2.8 and Item Mic 2.3.0
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          python -m pip install build pillow
+          python -m compileall -q VoiceCraft.Endstone/src tools/apply_voice_range_patch.py tools/build_item_mic_voice_range_addon.py
+          (cd VoiceCraft.Endstone && python -m build --wheel)
+          wheel=$(find VoiceCraft.Endstone/dist -maxdepth 1 -name 'endstone_voicecraft-0.2.8-*.whl' -print -quit)
+          test -n "$wheel"
+          cp "$wheel" test-assets/endstone_voicecraft-0.2.8-py3-none-any.whl
+          python tools/build_item_mic_voice_range_addon.py . test-assets/VoiceCraft_ItemMic_v2.3.0.mcaddon
+          test -s test-assets/VoiceCraft_ItemMic_v2.3.0.mcaddon
+
+      - name: Validate Item Mic Voice Range addon
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf itemmic-check
+          mkdir -p itemmic-check/bp itemmic-check/rp
+          unzip -q test-assets/VoiceCraft_ItemMic_v2.3.0.mcaddon -d itemmic-check
+          test -s itemmic-check/VoiceCraft_ItemMic_BP_v2.3.0.mcpack
+          test -s itemmic-check/VoiceCraft_ItemMic_RP_v2.3.0.mcpack
+          unzip -q itemmic-check/VoiceCraft_ItemMic_BP_v2.3.0.mcpack -d itemmic-check/bp
+          unzip -q itemmic-check/VoiceCraft_ItemMic_RP_v2.3.0.mcpack -d itemmic-check/rp
+          grep -q 'VoiceCraft Item Mic BP v2.3' itemmic-check/bp/manifest.json
+          grep -q 'VoiceCraft Mic Icons RP v2.3' itemmic-check/rp/manifest.json
+          grep -q 'PlayerPermissionLevel.Operator' itemmic-check/bp/scripts/main.js
+          grep -q 'ModalFormData' itemmic-check/bp/scripts/main.js
+          grep -q 'voicecraft.vr.request.' itemmic-check/bp/scripts/main.js
+          grep -q 'ตั้งค่าระยะเสียง' itemmic-check/bp/scripts/main.js
+          grep -q '5 บล็อก' itemmic-check/bp/scripts/main.js
+          grep -q '10 บล็อก' itemmic-check/bp/scripts/main.js
+          grep -q '20 บล็อก' itemmic-check/bp/scripts/main.js
+
+      - name: Upload Voice Range test bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: VoiceCraft-VoiceRangeV1-TestBundle
+          if-no-files-found: error
+          path: |
+            test-assets/VoiceCraft-Server-Mobile-VoiceRangeV1-arm64-Signed.apk
+            test-assets/endstone_voicecraft-0.2.8-py3-none-any.whl
+            test-assets/VoiceCraft_ItemMic_v2.3.0.mcaddon
