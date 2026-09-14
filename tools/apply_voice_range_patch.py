@@ -27,7 +27,7 @@ def patch_android_bridge(root: Path) -> Path:
         '    private const string ProximityMinRangeProperty = "ProximityEffect:MinRange";\n'
         '    private const string ProximityMaxRangeProperty = "ProximityEffect:MaxRange";\n'
         '    private const float DefaultVoiceRange = 20f;\n'
-        '    private const float VoiceRangeFadeStartRatio = 0.70f;\n',
+        '    private const float VoiceRangeFadeStartRatio = 0.50f;\n',
         "voice range property constants",
     )
 
@@ -51,9 +51,9 @@ def patch_android_bridge(root: Path) -> Path:
     range_block_tail = (
         '            }\n'
         '        }\n\n'
-        '        // Per-player outgoing microphone range. Keep full volume through 70%\n'
+        '        // Per-player outgoing microphone range. Keep full volume through 50%\n'
         '        // of the selected range, then let VoiceCraft ProximityEffect fade\n'
-        '        // smoothly from 100% to silence over the final 30%.\n'
+        '        // from full volume to silence over the final 50%.\n'
         '        if (state.VoiceRange.HasValue)\n'
         '        {\n'
         '            var voiceRange = Math.Clamp(state.VoiceRange.Value, 1f, 30_000_000f);\n'
@@ -102,7 +102,7 @@ def patch_android_bridge(root: Path) -> Path:
     required = [
         'ProximityMinRangeProperty = "ProximityEffect:MinRange"',
         'ProximityMaxRangeProperty = "ProximityEffect:MaxRange"',
-        "VoiceRangeFadeStartRatio = 0.70f",
+        "VoiceRangeFadeStartRatio = 0.50f",
         "float? VoiceRange",
         'root.TryGetProperty("voiceRange"',
         "state.VoiceRange.HasValue",
@@ -128,6 +128,10 @@ def patch_proximity_effect(root: Path) -> Path:
     max_old = '''        public float EvaluateMaxRangeProperty(VoiceCraftEntity e1, VoiceCraftEntity e2)\n        {\n            const string property = $"{nameof(ProximityEffect)}:{nameof(MaxRange)}";\n            var propVal1 = e1.TryGetProperty<float?>(property, out var prop1);\n            var propVal2 = e2.TryGetProperty<float?>(property, out var prop2);\n            if (!propVal1 && !propVal2) return MaxRange;\n            return Math.Max(prop1 ?? float.MinValue, prop2 ?? float.MinValue);\n        }\n'''
     max_new = '''        public float EvaluateMaxRangeProperty(VoiceCraftEntity e1, VoiceCraftEntity e2)\n        {\n            const string property = $"{nameof(ProximityEffect)}:{nameof(MaxRange)}";\n            // VoiceCraft Server Mobile treats MaxRange as an outgoing speaker\n            // property. e1 is always the source/speaker in VisibilitySystem and\n            // ProximityEffectProcessor, so one loud player cannot expand another\n            // player's microphone range.\n            if (!e1.TryGetProperty<float?>(property, out var sourceRange)) return MaxRange;\n            return Math.Max(0.0f, sourceRange ?? MaxRange);\n        }\n'''
     text = replace_once(text, max_old, max_new, "speaker-only ProximityEffect MaxRange")
+
+    linear_old = '''            var distance = Vector3.Distance(Entity.Position, to.Position) - minRange;\n            var factor = 1f - Math.Clamp(distance / range, 0f, 1f);\n            _lerpVolume.TargetVolume = factor;\n'''
+    nonlinear_new = '''            var distance = Vector3.Distance(Entity.Position, to.Position) - minRange;\n            var linearFactor = 1f - Math.Clamp(distance / range, 0f, 1f);\n            // Make the 50%-90% falloff clearly audible without creating a hard cut.\n            // Power 1.5 keeps the fade smooth while reducing distant voices faster.\n            var factor = MathF.Pow(linearFactor, 1.5f);\n            _lerpVolume.TargetVolume = factor;\n'''
+    text = replace_once(text, linear_old, nonlinear_new, "strong nonlinear ProximityEffect fade curve")
     path.write_text(text, encoding="utf-8")
 
     final = path.read_text(encoding="utf-8")
@@ -135,6 +139,8 @@ def patch_proximity_effect(root: Path) -> Path:
         "fade-start distance",
         "Listener properties must not change another",
         "one loud player cannot expand another",
+        "50%-90% falloff clearly audible",
+        "MathF.Pow(linearFactor, 1.5f)",
         "EvaluateMinRangeProperty",
         "EvaluateMaxRangeProperty",
     ]
@@ -148,8 +154,8 @@ def main() -> None:
     root = Path(sys.argv[1] if len(sys.argv) > 1 else ".").resolve()
     bridge = patch_android_bridge(root)
     proximity = patch_proximity_effect(root)
-    print(f"Applied Voice Range + 70% distance fade bridge patch to {bridge}")
-    print(f"Applied speaker-only ProximityEffect min/max patch to {proximity}")
+    print(f"Applied Voice Range + 50%-100% strong distance fade bridge patch to {bridge}")
+    print(f"Applied speaker-only ProximityEffect min/max + nonlinear 1.5 fade curve to {proximity}")
 
 
 if __name__ == "__main__":
