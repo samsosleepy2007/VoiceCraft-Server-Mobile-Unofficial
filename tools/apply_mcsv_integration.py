@@ -28,7 +28,7 @@ def main() -> None:
         "MCSV fields",
     )
 
-    card = r'''        body.AddView(config, CardLayout());
+    card = r'''        body.AddView(endstone, CardLayout());
 
         _mcsvCard = Card(SuccessFill, Green);
         _mcsvCard.Background = Round(SuccessFill, 22, Green, 2);
@@ -73,14 +73,13 @@ def main() -> None:
         _mcsvCard.AddView(_mcsvAction, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MatchParent, Dp(50)));
         _mcsvCard.Visibility = ViewStates.Gone;
         body.AddView(_mcsvCard, CardLayout());
-
-        var flow = Card();'''
+        return scroll;'''
 
     text = replace_once(
         text,
-        "        body.AddView(config, CardLayout());\n\n        var flow = Card();",
+        "        body.AddView(endstone, CardLayout());\n        return scroll;",
         card,
-        "MCSV card below Endstone integration",
+        "MCSV card directly below final Endstone integration",
     )
 
     text = replace_once(
@@ -183,7 +182,6 @@ def main() -> None:
 
         try
         {
-            // Validate before saving anything. The encrypted token is kept only on this Android installation.
             using (var preflight = new McsvApiClient(apiKey))
                 await preflight.ValidateKeyAsync();
             McsvTokenStore.Save(this, apiKey);
@@ -253,6 +251,7 @@ def main() -> None:
         "McsvTokenStore.Save(this, apiKey)",
         "Restart เซิร์ฟเวอร์",
         "CONNECT & INSTALL",
+        "body.AddView(endstone, CardLayout());",
     ]
     missing = [value for value in required if value not in text]
     if missing:
