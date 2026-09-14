@@ -24,8 +24,10 @@ def patch_android_bridge(root: Path) -> Path:
         text,
         '    private const string ItemMicMutedProperty = "voicecraft:item_mic_muted";\n',
         '    private const string ItemMicMutedProperty = "voicecraft:item_mic_muted";\n'
+        '    private const string ProximityMinRangeProperty = "ProximityEffect:MinRange";\n'
         '    private const string ProximityMaxRangeProperty = "ProximityEffect:MaxRange";\n'
-        '    private const float DefaultVoiceRange = 20f;\n',
+        '    private const float DefaultVoiceRange = 20f;\n'
+        '    private const float VoiceRangeFadeStartRatio = 0.70f;\n',
         "voice range property constants",
     )
 
@@ -34,9 +36,10 @@ def patch_android_bridge(root: Path) -> Path:
         '        entity.SetProperty(ItemMicMutedProperty, false);\n'
         '        entity.SetDescription($"Welcome! Your binding key is {key}");\n',
         '        entity.SetProperty(ItemMicMutedProperty, false);\n'
+        '        entity.SetProperty<float?>(ProximityMinRangeProperty, DefaultVoiceRange * VoiceRangeFadeStartRatio);\n'
         '        entity.SetProperty<float?>(ProximityMaxRangeProperty, DefaultVoiceRange);\n'
         '        entity.SetDescription($"Welcome! Your binding key is {key}");\n',
-        "reset voice range on recycled entity",
+        "reset voice range and fade on recycled entity",
     )
 
     mic_block_tail = (
@@ -48,17 +51,20 @@ def patch_android_bridge(root: Path) -> Path:
     range_block_tail = (
         '            }\n'
         '        }\n\n'
-        '        // Per-player outgoing microphone range. VoiceCraft\'s ProximityEffect\n'
-        '        // reads this property for visibility and attenuation.\n'
+        '        // Per-player outgoing microphone range. Keep full volume through 70%\n'
+        '        // of the selected range, then let VoiceCraft ProximityEffect fade\n'
+        '        // smoothly from 100% to silence over the final 30%.\n'
         '        if (state.VoiceRange.HasValue)\n'
         '        {\n'
         '            var voiceRange = Math.Clamp(state.VoiceRange.Value, 1f, 30_000_000f);\n'
+        '            var fadeStart = Math.Clamp(voiceRange * VoiceRangeFadeStartRatio, 0f, voiceRange);\n'
+        '            entity.SetProperty<float?>(ProximityMinRangeProperty, fadeStart);\n'
         '            entity.SetProperty<float?>(ProximityMaxRangeProperty, voiceRange);\n'
         '        }\n'
         '    }\n\n'
         '    private void HandleBind(BridgeBindRequest request)\n'
     )
-    text = replace_once(text, mic_block_tail, range_block_tail, "apply voice range to entity")
+    text = replace_once(text, mic_block_tail, range_block_tail, "apply voice range distance fade to entity")
 
     text = replace_once(
         text,
@@ -94,10 +100,14 @@ def patch_android_bridge(root: Path) -> Path:
 
     final = path.read_text(encoding="utf-8")
     required = [
+        'ProximityMinRangeProperty = "ProximityEffect:MinRange"',
         'ProximityMaxRangeProperty = "ProximityEffect:MaxRange"',
+        "VoiceRangeFadeStartRatio = 0.70f",
         "float? VoiceRange",
         'root.TryGetProperty("voiceRange"',
         "state.VoiceRange.HasValue",
+        "voiceRange * VoiceRangeFadeStartRatio",
+        "entity.SetProperty<float?>(ProximityMinRangeProperty, fadeStart)",
         "entity.SetProperty<float?>(ProximityMaxRangeProperty, voiceRange)",
         'bridgeVersion = "0.2.8"',
     ]
@@ -110,13 +120,27 @@ def patch_android_bridge(root: Path) -> Path:
 def patch_proximity_effect(root: Path) -> Path:
     path = root / "VoiceCraft.Upstream" / "VoiceCraft.Network" / "Audio" / "Effects" / "ProximityEffect.cs"
     text = path.read_text(encoding="utf-8")
-    old = '''        public float EvaluateMaxRangeProperty(VoiceCraftEntity e1, VoiceCraftEntity e2)\n        {\n            const string property = $"{nameof(ProximityEffect)}:{nameof(MaxRange)}";\n            var propVal1 = e1.TryGetProperty<float?>(property, out var prop1);\n            var propVal2 = e2.TryGetProperty<float?>(property, out var prop2);\n            if (!propVal1 && !propVal2) return MaxRange;\n            return Math.Max(prop1 ?? float.MinValue, prop2 ?? float.MinValue);\n        }\n'''
-    new = '''        public float EvaluateMaxRangeProperty(VoiceCraftEntity e1, VoiceCraftEntity e2)\n        {\n            const string property = $"{nameof(ProximityEffect)}:{nameof(MaxRange)}";\n            // VoiceCraft Server Mobile treats MaxRange as an outgoing speaker\n            // property. e1 is always the source/speaker in VisibilitySystem and\n            // ProximityEffectProcessor, so one loud player cannot expand another\n            // player's microphone range.\n            if (!e1.TryGetProperty<float?>(property, out var sourceRange)) return MaxRange;\n            return Math.Max(0.0f, sourceRange ?? MaxRange);\n        }\n'''
-    text = replace_once(text, old, new, "speaker-only ProximityEffect MaxRange")
+
+    min_old = '''        public float EvaluateMinRangeProperty(VoiceCraftEntity e1, VoiceCraftEntity e2)\n        {\n            const string property = $"{nameof(ProximityEffect)}:{nameof(MinRange)}";\n            var propVal1 = e1.TryGetProperty<float?>(property, out var prop1);\n            var propVal2 = e2.TryGetProperty<float?>(property, out var prop2);\n            if (!propVal1 && !propVal2) return MinRange;\n            return Math.Min(prop1 ?? float.MaxValue, prop2 ?? float.MaxValue);\n        }\n'''
+    min_new = '''        public float EvaluateMinRangeProperty(VoiceCraftEntity e1, VoiceCraftEntity e2)\n        {\n            const string property = $"{nameof(ProximityEffect)}:{nameof(MinRange)}";\n            // VoiceCraft Server Mobile treats MinRange as the source/speaker's\n            // fade-start distance. Listener properties must not change another\n            // player's outgoing attenuation curve.\n            if (!e1.TryGetProperty<float?>(property, out var sourceRange)) return MinRange;\n            return Math.Max(0.0f, sourceRange ?? MinRange);\n        }\n'''
+    text = replace_once(text, min_old, min_new, "speaker-only ProximityEffect MinRange")
+
+    max_old = '''        public float EvaluateMaxRangeProperty(VoiceCraftEntity e1, VoiceCraftEntity e2)\n        {\n            const string property = $"{nameof(ProximityEffect)}:{nameof(MaxRange)}";\n            var propVal1 = e1.TryGetProperty<float?>(property, out var prop1);\n            var propVal2 = e2.TryGetProperty<float?>(property, out var prop2);\n            if (!propVal1 && !propVal2) return MaxRange;\n            return Math.Max(prop1 ?? float.MinValue, prop2 ?? float.MinValue);\n        }\n'''
+    max_new = '''        public float EvaluateMaxRangeProperty(VoiceCraftEntity e1, VoiceCraftEntity e2)\n        {\n            const string property = $"{nameof(ProximityEffect)}:{nameof(MaxRange)}";\n            // VoiceCraft Server Mobile treats MaxRange as an outgoing speaker\n            // property. e1 is always the source/speaker in VisibilitySystem and\n            // ProximityEffectProcessor, so one loud player cannot expand another\n            // player's microphone range.\n            if (!e1.TryGetProperty<float?>(property, out var sourceRange)) return MaxRange;\n            return Math.Max(0.0f, sourceRange ?? MaxRange);\n        }\n'''
+    text = replace_once(text, max_old, max_new, "speaker-only ProximityEffect MaxRange")
     path.write_text(text, encoding="utf-8")
+
     final = path.read_text(encoding="utf-8")
-    if "one loud player cannot expand another" not in final:
-        raise RuntimeError("Voice range ProximityEffect validation failed")
+    required = [
+        "fade-start distance",
+        "Listener properties must not change another",
+        "one loud player cannot expand another",
+        "EvaluateMinRangeProperty",
+        "EvaluateMaxRangeProperty",
+    ]
+    missing = [value for value in required if value not in final]
+    if missing:
+        raise RuntimeError(f"Voice range ProximityEffect validation failed: {missing}")
     return path
 
 
@@ -124,8 +148,8 @@ def main() -> None:
     root = Path(sys.argv[1] if len(sys.argv) > 1 else ".").resolve()
     bridge = patch_android_bridge(root)
     proximity = patch_proximity_effect(root)
-    print(f"Applied Voice Range bridge patch to {bridge}")
-    print(f"Applied outgoing ProximityEffect patch to {proximity}")
+    print(f"Applied Voice Range + 70% distance fade bridge patch to {bridge}")
+    print(f"Applied speaker-only ProximityEffect min/max patch to {proximity}")
 
 
 if __name__ == "__main__":
