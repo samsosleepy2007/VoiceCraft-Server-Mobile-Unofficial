@@ -45,8 +45,9 @@ jobs:
           python VoiceCraft.Guest.Patch/apply_guest_account_patch.py .
           python tools/apply_item_mic_bridge_patch.py .
           python tools/apply_voice_range_patch.py .
-          python tools/apply_mcsv_integration.py .
           python VoiceCraft.Guest.Patch/apply_legal_compliance_patch.py .
+          # Legal/UI5/Render transforms rewrite the Bridge page, so MCSV must be the final UI patch.
+          python tools/apply_mcsv_integration.py .
 
       - name: Set test Android identity
         shell: bash
@@ -77,28 +78,29 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python -m compileall -q tools/apply_mcsv_integration.py
-          test -s VoiceCraft.Server.Android/Resources/drawable/mcsv_logo.webp
-          test -f VoiceCraft.Server.Android/McsvTokenStore.cs
-          test -f VoiceCraft.Server.Android/McsvApiClient.cs
-          test -f VoiceCraft.Server.Android/McsvVoiceCraftInstaller.cs
-          grep -q 'https://api.mcsv.me/api/v1/' VoiceCraft.Server.Android/McsvApiClient.cs
-          grep -q 'AllowAutoRedirect = false' VoiceCraft.Server.Android/McsvApiClient.cs
-          grep -q 'KeystoreJsonStore' VoiceCraft.Server.Android/McsvTokenStore.cs
-          grep -q 'endstone_voicecraft-0.2.8-py3-none-any.whl' VoiceCraft.Server.Android/McsvVoiceCraftInstaller.cs
-          grep -q 'v1.7.1-itemmic2.4.0-hidden-single' VoiceCraft.Server.Android/McsvVoiceCraftInstaller.cs
-          grep -q 'files_fetch_url' VoiceCraft.Server.Android/McsvVoiceCraftInstaller.cs
-          grep -q 'files_decompress' VoiceCraft.Server.Android/McsvVoiceCraftInstaller.cs
-          grep -q 'world_behavior_packs.json' VoiceCraft.Server.Android/McsvVoiceCraftInstaller.cs
-          grep -q 'world_resource_packs.json' VoiceCraft.Server.Android/McsvVoiceCraftInstaller.cs
-          grep -q 'power_action' VoiceCraft.Server.Android/McsvVoiceCraftInstaller.cs
-          grep -q 'action = "restart"' VoiceCraft.Server.Android/McsvVoiceCraftInstaller.cs
-          grep -q 'ใช้ MCSV อยู่รึป่าว?' VoiceCraft.Server.Android/ModernMainActivity.cs
-          grep -q 'Resource.Drawable.mcsv_logo' VoiceCraft.Server.Android/ModernMainActivity.cs
-          grep -q 'RefreshMcsvCardVisibility(ready)' VoiceCraft.Server.Android/ModernMainActivity.cs
-          grep -q 'McsvVoiceCraftInstaller.InstallAsync' VoiceCraft.Server.Android/ModernMainActivity.cs
-          grep -q '<ApplicationVersion>15</ApplicationVersion>' VoiceCraft.Server.Android/VoiceCraft.Server.Android.csproj
-          grep -q '<ApplicationDisplayVersion>1.7.1-android-phase2-ui5-mcsv-v1-test</ApplicationDisplayVersion>' VoiceCraft.Server.Android/VoiceCraft.Server.Android.csproj
+          check() { echo "[guard] $1"; shift; "$@"; }
+          check "patch script compiles" python -m compileall -q tools/apply_mcsv_integration.py
+          check "MCSV logo" test -s VoiceCraft.Server.Android/Resources/drawable/mcsv_logo.webp
+          check "token store" test -f VoiceCraft.Server.Android/McsvTokenStore.cs
+          check "API client" test -f VoiceCraft.Server.Android/McsvApiClient.cs
+          check "installer" test -f VoiceCraft.Server.Android/McsvVoiceCraftInstaller.cs
+          check "fixed API host" grep -q 'https://api.mcsv.me/api/v1/' VoiceCraft.Server.Android/McsvApiClient.cs
+          check "redirects blocked" grep -q 'AllowAutoRedirect = false' VoiceCraft.Server.Android/McsvApiClient.cs
+          check "Keystore protected token" grep -q 'KeystoreJsonStore' VoiceCraft.Server.Android/McsvTokenStore.cs
+          check "canonical Endstone wheel" grep -q 'endstone_voicecraft-0.2.8-py3-none-any.whl' VoiceCraft.Server.Android/McsvVoiceCraftInstaller.cs
+          check "Item Mic 2.4 release" grep -q 'v1.7.1-itemmic2.4.0-hidden-single' VoiceCraft.Server.Android/McsvVoiceCraftInstaller.cs
+          check "remote file download" grep -q 'files_fetch_url' VoiceCraft.Server.Android/McsvVoiceCraftInstaller.cs
+          check "archive extraction" grep -q 'files_decompress' VoiceCraft.Server.Android/McsvVoiceCraftInstaller.cs
+          check "behavior pack activation" grep -q 'world_behavior_packs.json' VoiceCraft.Server.Android/McsvVoiceCraftInstaller.cs
+          check "resource pack activation" grep -q 'world_resource_packs.json' VoiceCraft.Server.Android/McsvVoiceCraftInstaller.cs
+          check "power action" grep -q 'power_action' VoiceCraft.Server.Android/McsvVoiceCraftInstaller.cs
+          check "automatic restart" grep -q 'action = "restart"' VoiceCraft.Server.Android/McsvVoiceCraftInstaller.cs
+          check "Thai card title" grep -q 'ใช้ MCSV อยู่รึป่าว?' VoiceCraft.Server.Android/ModernMainActivity.cs
+          check "MCSV logo in UI" grep -q 'Resource.Drawable.mcsv_logo' VoiceCraft.Server.Android/ModernMainActivity.cs
+          check "conditional visibility" grep -q 'RefreshMcsvCardVisibility(ready)' VoiceCraft.Server.Android/ModernMainActivity.cs
+          check "installer wired to UI" grep -q 'McsvVoiceCraftInstaller.InstallAsync' VoiceCraft.Server.Android/ModernMainActivity.cs
+          check "version code 15" grep -q '<ApplicationVersion>15</ApplicationVersion>' VoiceCraft.Server.Android/VoiceCraft.Server.Android.csproj
+          check "MCSV test display version" grep -q '<ApplicationDisplayVersion>1.7.1-android-phase2-ui5-mcsv-v1-test</ApplicationDisplayVersion>' VoiceCraft.Server.Android/VoiceCraft.Server.Android.csproj
 
       - name: Setup .NET 10
         uses: actions/setup-dotnet@v4
