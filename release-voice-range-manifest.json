@@ -1,0 +1,14 @@
+{
+  "tag": "v1.7.1-android-phase2-ui5-voice-range-strongfade50-endstone0.2.8-relay0.2.1-itemmic2.3.0",
+  "title": "VoiceCraft Server Mobile Voice Range + StrongFade50",
+  "android": {
+    "display_version": "1.7.1-android-phase2-ui5-voice-range",
+    "version_code": 14
+  },
+  "endstone": "0.2.8",
+  "relay": "0.2.1",
+  "protocol": 1,
+  "item_mic": "2.3.0",
+  "voicecraft_upstream": "v1.7.1",
+  "voicecraft_upstream_commit": "85aaccccbb58adb23e8c87144e8b1c24bf4b2011"
+}

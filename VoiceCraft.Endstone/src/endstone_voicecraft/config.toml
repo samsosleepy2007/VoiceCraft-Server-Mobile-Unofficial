@@ -9,6 +9,10 @@ heartbeat_seconds = 30
 min_key_length = 4
 max_key_length = 128
 
+[voice_range]
+default_blocks = 20
+max_blocks = 150
+
 [bridge]
 # Primary relay is required. backup_urls is optional and may contain any
 # number of additional relay endpoints. Every relay uses the same server_id
