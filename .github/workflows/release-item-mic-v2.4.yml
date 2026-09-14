@@ -1,0 +1,120 @@
+name: Release Item Mic 2.4.0
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "release-item-mic-v2.4-manifest.json"
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Read release manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "RELEASE_TAG=$(jq -r '.tag' release-item-mic-v2.4-manifest.json)" >> "$GITHUB_ENV"
+          echo "RELEASE_TITLE=$(jq -r '.title' release-item-mic-v2.4-manifest.json)" >> "$GITHUB_ENV"
+          test "$(jq -r '.item_mic' release-item-mic-v2.4-manifest.json)" = "2.4.0"
+          test "$(jq -r '.voice_range' release-item-mic-v2.4-manifest.json)" = "StrongFade50"
+          test "$(jq -r '.endstone' release-item-mic-v2.4-manifest.json)" = "0.2.8"
+          test "$(jq -r '.relay' release-item-mic-v2.4-manifest.json)" = "0.2.1"
+          test "$(jq -r '.voicecraft_upstream_commit' release-item-mic-v2.4-manifest.json)" = "85aaccccbb58adb23e8c87144e8b1c24bf4b2011"
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install builder dependencies
+        run: python -m pip install --upgrade pillow
+
+      - name: Build Item Mic 2.4.0
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m compileall -q tools/build_item_mic_addon.py tools/build_item_mic_voice_range_addon.py tools/build_item_mic_v2_4_addon.py
+          mkdir -p release-assets
+          python tools/build_item_mic_v2_4_addon.py . release-assets/VoiceCraft_ItemMic_v2.4.0.mcaddon
+          test -s release-assets/VoiceCraft_ItemMic_v2.4.0.mcaddon
+
+      - name: Validate Item Mic 2.4.0 package
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf itemmic-check
+          mkdir -p itemmic-check/bp itemmic-check/rp
+          unzip -q release-assets/VoiceCraft_ItemMic_v2.4.0.mcaddon -d itemmic-check
+          test -s itemmic-check/VoiceCraft_ItemMic_BP_v2.4.0.mcpack
+          test -s itemmic-check/VoiceCraft_ItemMic_RP_v2.4.0.mcpack
+          unzip -q itemmic-check/VoiceCraft_ItemMic_BP_v2.4.0.mcpack -d itemmic-check/bp
+          unzip -q itemmic-check/VoiceCraft_ItemMic_RP_v2.4.0.mcpack -d itemmic-check/rp
+          grep -q 'VoiceCraft Item Mic BP v2.4' itemmic-check/bp/manifest.json
+          grep -q 'VoiceCraft Mic Icons RP v2.4' itemmic-check/rp/manifest.json
+          test "$(grep -R -c '"'"'category"'"': "'"'none"'"'' itemmic-check/bp/items/*.json | awk -F: '{s+=$2} END {print s+0}')" -eq 4
+          grep -q 'function enforceSingleMic(player)' itemmic-check/bp/scripts/main.js
+          grep -q 'MIC_DUPLICATE_REMOVED' itemmic-check/bp/scripts/main.js
+          grep -q 'inv.setItem(i, undefined)' itemmic-check/bp/scripts/main.js
+          grep -q 'voicecraft.vr.request.' itemmic-check/bp/scripts/main.js
+          for name in mic_off mic_on mic_hold mic_toggle; do
+            test -s "itemmic-check/rp/attachables/${name}.entity.json"
+            grep -q 'geometry.voicecraft.mic_invisible' "itemmic-check/rp/attachables/${name}.entity.json"
+          done
+          test -s itemmic-check/rp/models/entity/voicecraft_mic_invisible.geo.json
+          grep -q '"cubes": \[\]' itemmic-check/rp/models/entity/voicecraft_mic_invisible.geo.json
+          test -s itemmic-check/rp/textures/entity/voicecraft_mic_invisible.png
+          test -s itemmic-check/rp/textures/items/icon_mic_off.png
+          test -s itemmic-check/rp/textures/items/icon_mic_on.png
+
+      - name: Create checksum and release notes
+        shell: bash
+        run: |
+          set -euo pipefail
+          (cd release-assets && sha256sum VoiceCraft_ItemMic_v2.4.0.mcaddon > SHA256SUMS.txt)
+          cat > release-notes.md <<'EOF'
+          ## VoiceCraft Item Mic 2.4.0
+
+          This add-on update keeps the existing Voice Range + StrongFade50 protocol and focuses on item behavior inside Minecraft Bedrock.
+
+          ### New in 2.4.0
+          - Mic items are hidden from the Creative inventory with `menu_category: none`.
+          - A player can keep only one VoiceCraft Mic across inventory and offhand.
+          - Duplicate Mic copies are removed automatically during the normal per-tick evaluation path.
+          - Offhand Mic is preserved first because offhand intentionally forces microphone ON.
+          - If no offhand Mic exists, the currently selected Mic is preferred; otherwise the first inventory Mic is kept.
+          - Held/equipped Mic rendering uses an empty geometry plus a transparent texture, so the Mic is invisible in hand while inventory icons remain visible.
+
+          ### Preserved behavior
+          - Hold-to-Talk and Toggle modes.
+          - Offhand always-on behavior.
+          - Voice Range UI and server-authoritative range requests.
+          - Mic On/Off variants, inventory lock and keep-on-death behavior.
+          - Compatible with Endstone 0.2.8 and Voice Range StrongFade50 release.
+
+          This release contains the tested `VoiceCraft_ItemMic_v2.4.0.mcaddon` and its SHA-256 checksum.
+          EOF
+
+      - name: Publish GitHub release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release edit "$RELEASE_TAG" --title "$RELEASE_TITLE" --notes-file release-notes.md --latest
+            gh release upload "$RELEASE_TAG" release-assets/VoiceCraft_ItemMic_v2.4.0.mcaddon release-assets/SHA256SUMS.txt --clobber
+          else
+            gh release create "$RELEASE_TAG" release-assets/VoiceCraft_ItemMic_v2.4.0.mcaddon release-assets/SHA256SUMS.txt --target "$GITHUB_SHA" --title "$RELEASE_TITLE" --notes-file release-notes.md --latest
+          fi
