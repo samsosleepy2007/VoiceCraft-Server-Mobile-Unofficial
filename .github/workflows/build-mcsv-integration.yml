@@ -1,0 +1,148 @@
+name: Build MCSV Integration V1
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [mcsv-integration-v1]
+    paths:
+      - "VoiceCraft.Guest.Patch/VoiceCraft.Server.Android/Mcsv*.cs"
+      - "VoiceCraft.Guest.Patch/VoiceCraft.Server.Android/Resources/drawable/mcsv_logo.webp"
+      - "tools/apply_mcsv_integration.py"
+      - ".github/workflows/build-mcsv-integration.yml"
+  pull_request:
+    paths:
+      - "VoiceCraft.Guest.Patch/VoiceCraft.Server.Android/Mcsv*.cs"
+      - "VoiceCraft.Guest.Patch/VoiceCraft.Server.Android/Resources/drawable/mcsv_logo.webp"
+      - "tools/apply_mcsv_integration.py"
+      - ".github/workflows/build-mcsv-integration.yml"
+
+jobs:
+  build-android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout repository and VoiceCraft v1.7.1 submodule
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Verify pinned upstream
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C VoiceCraft.Upstream rev-parse HEAD)" = "85aaccccbb58adb23e8c87144e8b1c24bf4b2011"
+
+      - name: Apply production runtime patches + MCSV Integration V1
+        shell: bash
+        run: |
+          set -euo pipefail
+          python tools/apply_phase1.py VoiceCraft.Upstream
+          python tools/apply_android_console_fix.py VoiceCraft.Upstream
+          python tools/apply_android_tcp_mchttp.py VoiceCraft.Upstream
+          python tools/apply_bridge_runtime.py VoiceCraft.Upstream
+          python tools/apply_render_api_core.py .
+          python VoiceCraft.Guest.Patch/apply_guest_account_patch.py .
+          python tools/apply_item_mic_bridge_patch.py .
+          python tools/apply_voice_range_patch.py .
+          python VoiceCraft.Guest.Patch/apply_legal_compliance_patch.py .
+          # Legal/UI5/Render transforms rewrite the Bridge page, so MCSV must be the final UI patch.
+          python tools/apply_mcsv_integration.py .
+
+      - name: Set test Android identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import re
+
+          display = "1.7.1-android-phase2-ui5-mcsv-v1-test"
+          csproj = Path("VoiceCraft.Server.Android/VoiceCraft.Server.Android.csproj")
+          text = csproj.read_text(encoding="utf-8")
+          text, n1 = re.subn(r"<ApplicationVersion>\d+</ApplicationVersion>", "<ApplicationVersion>15</ApplicationVersion>", text, count=1)
+          text, n2 = re.subn(r"<ApplicationDisplayVersion>[^<]+</ApplicationDisplayVersion>", f"<ApplicationDisplayVersion>{display}</ApplicationDisplayVersion>", text, count=1)
+          if n1 != 1 or n2 != 1:
+              raise SystemExit("Could not set MCSV test Android identity")
+          csproj.write_text(text, encoding="utf-8")
+
+          bridge = Path("VoiceCraft.Server.Android/EndstoneBridgeController.cs")
+          text = bridge.read_text(encoding="utf-8")
+          text, n = re.subn(r'appVersion = "[^"]+"', f'appVersion = "{display}"', text, count=1)
+          if n != 1:
+              raise SystemExit("Could not set MCSV test bridge appVersion")
+          bridge.write_text(text, encoding="utf-8")
+          PY
+
+      - name: Validate MCSV Integration V1 guards
+        shell: bash
+        run: |
+          set -euo pipefail
+          check() { echo "[guard] $1"; shift; "$@"; }
+          check "patch script compiles" python -m compileall -q tools/apply_mcsv_integration.py
+          check "MCSV logo" test -s VoiceCraft.Server.Android/Resources/drawable/mcsv_logo.webp
+          check "token store" test -f VoiceCraft.Server.Android/McsvTokenStore.cs
+          check "API client" test -f VoiceCraft.Server.Android/McsvApiClient.cs
+          check "installer" test -f VoiceCraft.Server.Android/McsvVoiceCraftInstaller.cs
+          check "fixed API host" grep -q 'https://api.mcsv.me/api/v1/' VoiceCraft.Server.Android/McsvApiClient.cs
+          check "redirects blocked" grep -q 'AllowAutoRedirect = false' VoiceCraft.Server.Android/McsvApiClient.cs
+          check "Keystore protected token" grep -q 'KeystoreJsonStore' VoiceCraft.Server.Android/McsvTokenStore.cs
+          check "canonical Endstone wheel" grep -q 'endstone_voicecraft-0.2.8-py3-none-any.whl' VoiceCraft.Server.Android/McsvVoiceCraftInstaller.cs
+          check "Item Mic 2.4 release" grep -q 'v1.7.1-itemmic2.4.0-hidden-single' VoiceCraft.Server.Android/McsvVoiceCraftInstaller.cs
+          check "remote file download" grep -q 'files_fetch_url' VoiceCraft.Server.Android/McsvVoiceCraftInstaller.cs
+          check "archive extraction" grep -q 'files_decompress' VoiceCraft.Server.Android/McsvVoiceCraftInstaller.cs
+          check "behavior pack activation" grep -q 'world_behavior_packs.json' VoiceCraft.Server.Android/McsvVoiceCraftInstaller.cs
+          check "resource pack activation" grep -q 'world_resource_packs.json' VoiceCraft.Server.Android/McsvVoiceCraftInstaller.cs
+          check "power action" grep -q 'power_action' VoiceCraft.Server.Android/McsvVoiceCraftInstaller.cs
+          check "automatic restart" grep -q 'action = "restart"' VoiceCraft.Server.Android/McsvVoiceCraftInstaller.cs
+          check "Thai card title" grep -q 'ใช้ MCSV อยู่รึป่าว?' VoiceCraft.Server.Android/ModernMainActivity.cs
+          check "MCSV logo in UI" grep -q 'Resource.Drawable.mcsv_logo' VoiceCraft.Server.Android/ModernMainActivity.cs
+          check "conditional visibility" grep -q 'RefreshMcsvCardVisibility(ready)' VoiceCraft.Server.Android/ModernMainActivity.cs
+          check "installer wired to UI" grep -q 'McsvVoiceCraftInstaller.InstallAsync' VoiceCraft.Server.Android/ModernMainActivity.cs
+          check "version code 15" grep -q '<ApplicationVersion>15</ApplicationVersion>' VoiceCraft.Server.Android/VoiceCraft.Server.Android.csproj
+          check "MCSV test display version" grep -q '<ApplicationDisplayVersion>1.7.1-android-phase2-ui5-mcsv-v1-test</ApplicationDisplayVersion>' VoiceCraft.Server.Android/VoiceCraft.Server.Android.csproj
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+
+      - name: Install Android API 36
+        shell: bash
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platform-tools" "platforms;android-36" "build-tools;36.0.0"
+
+      - name: Install .NET Android workload
+        run: dotnet workload install android
+
+      - name: Build Android ARM64 APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          dotnet restore VoiceCraft.Server.Android/VoiceCraft.Server.Android.csproj
+          dotnet build VoiceCraft.Server.Android/VoiceCraft.Server.Android.csproj -c Release --no-restore
+          dotnet publish VoiceCraft.Server.Android/VoiceCraft.Server.Android.csproj -c Release -r android-arm64 --no-restore
+          mkdir -p test-assets
+          signed=$(find VoiceCraft.Server.Android/bin/Release/net10.0-android/android-arm64/publish -maxdepth 1 -name '*-Signed.apk' -print -quit)
+          test -n "$signed"
+          cp "$signed" test-assets/VoiceCraft-Server-Mobile-MCSV-V1-Test-arm64-Signed.apk
+          sha256sum test-assets/VoiceCraft-Server-Mobile-MCSV-V1-Test-arm64-Signed.apk | tee test-assets/SHA256SUMS.txt
+
+      - name: Upload MCSV Integration V1 test APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: VoiceCraft-MCSV-Integration-V1-Test
+          path: test-assets/*
+          if-no-files-found: error
