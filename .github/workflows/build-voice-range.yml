@@ -128,6 +128,50 @@ jobs:
           python tools/build_item_mic_voice_range_addon.py . test-assets/VoiceCraft_ItemMic_v2.3.0.mcaddon
           test -s test-assets/VoiceCraft_ItemMic_v2.3.0.mcaddon
 
+      - name: Validate canonical Endstone wheel package
+        shell: bash
+        run: |
+          set -euo pipefail
+          wheel="test-assets/endstone_voicecraft-0.2.8-py3-none-any.whl"
+          test -s "$wheel"
+          python - "$wheel" <<'PY'
+          import pathlib
+          import sys
+          import zipfile
+
+          wheel = pathlib.Path(sys.argv[1])
+          if wheel.name != "endstone_voicecraft-0.2.8-py3-none-any.whl":
+              raise SystemExit(f"Unexpected wheel filename: {wheel.name}")
+
+          with zipfile.ZipFile(wheel) as archive:
+              metadata_files = [name for name in archive.namelist() if name.endswith(".dist-info/METADATA")]
+              entry_files = [name for name in archive.namelist() if name.endswith(".dist-info/entry_points.txt")]
+              if metadata_files != ["endstone_voicecraft-0.2.8.dist-info/METADATA"]:
+                  raise SystemExit(f"Unexpected METADATA path: {metadata_files}")
+              metadata = archive.read(metadata_files[0]).decode("utf-8")
+              if "Name: endstone-voicecraft\n" not in metadata:
+                  raise SystemExit("Missing canonical distribution name endstone-voicecraft")
+              if "Version: 0.2.8\n" not in metadata:
+                  raise SystemExit("Missing Endstone plugin version 0.2.8")
+              if len(entry_files) != 1:
+                  raise SystemExit(f"Unexpected entry_points files: {entry_files}")
+              entry_points = archive.read(entry_files[0]).decode("utf-8")
+              if "voicecraft = endstone_voicecraft:VoiceCraftEndstone" not in entry_points:
+                  raise SystemExit("Missing Endstone voicecraft entry point")
+          PY
+          rm -rf wheel-install-check
+          python -m pip install --no-deps --target wheel-install-check "$wheel"
+          PYTHONPATH=wheel-install-check python - <<'PY'
+          import importlib.metadata
+
+          distribution = importlib.metadata.distribution("endstone-voicecraft")
+          if distribution.metadata["Name"] != "endstone-voicecraft":
+              raise SystemExit(distribution.metadata["Name"])
+          if distribution.version != "0.2.8":
+              raise SystemExit(distribution.version)
+          print("Canonical Endstone wheel validated:", distribution.metadata["Name"], distribution.version)
+          PY
+
       - name: Validate Item Mic Voice Range addon
         shell: bash
         run: |
