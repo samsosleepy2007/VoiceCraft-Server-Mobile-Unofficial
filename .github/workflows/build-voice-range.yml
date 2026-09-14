@@ -49,7 +49,7 @@ jobs:
           python tools/apply_voice_range_patch.py .
           python VoiceCraft.Guest.Patch/apply_legal_compliance_patch.py .
 
-      - name: Validate Voice Range integration and distance fade
+      - name: Validate Voice Range integration and strong distance fade
         shell: bash
         run: |
           set -euo pipefail
@@ -63,7 +63,7 @@ jobs:
           grep -q 'max_blocks = 150' VoiceCraft.Endstone/src/endstone_voicecraft/config.toml
           grep -q 'ProximityMinRangeProperty = "ProximityEffect:MinRange"' VoiceCraft.Server.Android/EndstoneBridgeController.cs
           grep -q 'ProximityMaxRangeProperty = "ProximityEffect:MaxRange"' VoiceCraft.Server.Android/EndstoneBridgeController.cs
-          grep -q 'VoiceRangeFadeStartRatio = 0.70f' VoiceCraft.Server.Android/EndstoneBridgeController.cs
+          grep -q 'VoiceRangeFadeStartRatio = 0.50f' VoiceCraft.Server.Android/EndstoneBridgeController.cs
           grep -q 'voiceRange \* VoiceRangeFadeStartRatio' VoiceCraft.Server.Android/EndstoneBridgeController.cs
           grep -q 'float? VoiceRange' VoiceCraft.Server.Android/EndstoneBridgeController.cs
           grep -q 'root.TryGetProperty("voiceRange"' VoiceCraft.Server.Android/EndstoneBridgeController.cs
@@ -71,6 +71,8 @@ jobs:
           grep -q 'fade-start distance' VoiceCraft.Upstream/VoiceCraft.Network/Audio/Effects/ProximityEffect.cs
           grep -q 'Listener properties must not change another' VoiceCraft.Upstream/VoiceCraft.Network/Audio/Effects/ProximityEffect.cs
           grep -q 'one loud player cannot expand another' VoiceCraft.Upstream/VoiceCraft.Network/Audio/Effects/ProximityEffect.cs
+          grep -q '50%-90% falloff clearly audible' VoiceCraft.Upstream/VoiceCraft.Network/Audio/Effects/ProximityEffect.cs
+          grep -q 'MathF.Pow(linearFactor, 1.5f)' VoiceCraft.Upstream/VoiceCraft.Network/Audio/Effects/ProximityEffect.cs
           grep -q 'networkEntity.Muted || networkEntity.ServerMuted || itemMicMuted' VoiceCraft.Upstream/VoiceCraft.Network/Servers/VoiceCraftServer.cs
           python tools/validate_voice_range_fade.py .
 
@@ -107,7 +109,7 @@ jobs:
           mkdir -p test-assets
           signed=$(find VoiceCraft.Server.Android/bin/Release/net10.0-android/android-arm64/publish -maxdepth 1 -name '*-Signed.apk' -print -quit)
           test -n "$signed"
-          cp "$signed" test-assets/VoiceCraft-Server-Mobile-VoiceRangeV1-DistanceFade-arm64-Signed.apk
+          cp "$signed" test-assets/VoiceCraft-Server-Mobile-VoiceRangeV1-StrongFade50-arm64-Signed.apk
 
       - name: Setup Python 3.11
         uses: actions/setup-python@v5
@@ -193,12 +195,12 @@ jobs:
           grep -q '10 บล็อก' itemmic-check/bp/scripts/main.js
           grep -q '20 บล็อก' itemmic-check/bp/scripts/main.js
 
-      - name: Upload Voice Range distance fade test bundle
+      - name: Upload Voice Range strong fade test bundle
         uses: actions/upload-artifact@v4
         with:
-          name: VoiceCraft-VoiceRangeV1-DistanceFade-TestBundle
+          name: VoiceCraft-VoiceRangeV1-StrongFade50-TestBundle
           if-no-files-found: error
           path: |
-            test-assets/VoiceCraft-Server-Mobile-VoiceRangeV1-DistanceFade-arm64-Signed.apk
+            test-assets/VoiceCraft-Server-Mobile-VoiceRangeV1-StrongFade50-arm64-Signed.apk
             test-assets/endstone_voicecraft-0.2.8-py3-none-any.whl
             test-assets/VoiceCraft_ItemMic_v2.3.0.mcaddon
