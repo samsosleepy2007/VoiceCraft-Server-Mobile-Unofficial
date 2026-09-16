@@ -101,6 +101,28 @@ def main() -> None:
         "verify Item Mic files after install",
     )
 
+    world_anchor = '''        progress("Enabling add-on in active world…");
+        await EnableItemMicForActiveWorldAsync(api, cancellationToken);
+
+        // Restart only after every required installation step has succeeded.
+'''
+    world_replacement = '''        progress("Enabling add-on in active world…");
+        await EnableItemMicForActiveWorldAsync(api, cancellationToken);
+        await McsvInstallVerifier.VerifyConfigAndActiveWorldAsync(
+            api,
+            serverId,
+            progress,
+            cancellationToken);
+
+        // Restart only after every required installation step has succeeded.
+'''
+    text = replace_once(
+        text,
+        world_anchor,
+        world_replacement,
+        "verify config and world before restart",
+    )
+
     installer.write_text(text, encoding="utf-8")
 
     final = installer.read_text(encoding="utf-8")
@@ -112,6 +134,7 @@ def main() -> None:
         "McsvEndweaveCatalog.SelectWheel",
         "McsvEndweaveInstaller.InstallAsync",
         "McsvInstallVerifier.VerifyItemMicFilesAsync",
+        "McsvInstallVerifier.VerifyConfigAndActiveWorldAsync",
         'progress("Installing Endstone plugin…")',
     ]
     missing = [value for value in required if value not in final]
@@ -122,6 +145,11 @@ def main() -> None:
     voicecraft_pos = final.index("await InstallPluginAsync")
     if endweave_pos >= voicecraft_pos:
         raise RuntimeError("Endweave must be staged before the VoiceCraft Endstone plugin")
+
+    verify_pos = final.index("McsvInstallVerifier.VerifyConfigAndActiveWorldAsync")
+    restart_pos = final.index('new { action = "restart" }')
+    if verify_pos >= restart_pos:
+        raise RuntimeError("Config/world verification must complete before restart")
 
     print(f"Applied MCSV Endweave V2 orchestration to {installer}")
 
