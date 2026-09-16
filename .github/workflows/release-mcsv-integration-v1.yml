@@ -1,4 +1,4 @@
-name: Release MCSV Integration V1
+name: Release MCSV Endweave V2
 
 on:
   push:
@@ -14,15 +14,17 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     env:
-      TAG: v1.7.1-android-phase2-ui5-mcsv-v1-endstone0.2.8-relay0.2.1-itemmic2.4.0
-      RELEASE_NAME: VoiceCraft Server Mobile MCSV Integration V1
-      APP_DISPLAY_VERSION: 1.7.1-android-phase2-ui5-mcsv-v1
-      APP_VERSION_CODE: "18"
-      APK_NAME: VoiceCraft-Server-Mobile-MCSV-V1-arm64-Signed.apk
+      TAG: v1.7.1-android-phase2-ui5-mcsv-v2-endweave0.5.1-endstone0.2.8-relay0.2.1-itemmic2.4.0
+      RELEASE_NAME: VoiceCraft Server Mobile MCSV Endweave V2
+      APP_DISPLAY_VERSION: 1.7.1-android-phase2-ui5-mcsv-v2-endweave
+      APP_VERSION_CODE: "19"
+      APK_NAME: VoiceCraft-Server-Mobile-MCSV-V2-Endweave-arm64-Signed.apk
       PLUGIN_NAME: endstone_voicecraft-0.2.8-py3-none-any.whl
       ADDON_NAME: VoiceCraft_ItemMic_v2.4.0.mcaddon
+      ENDWEAVE_NAME: endstone_endweave-0.5.1-cp312-abi3-manylinux_2_28_x86_64.whl
       EXPECTED_PLUGIN_SHA256: b6ac91c8e02441edb2476af3c473f58baf70fd99189c702342389931997840ea
       EXPECTED_ADDON_SHA256: c25a6bebe7e13f188c7dda21135598fe9d478960364576d4015b42e25c1430b8
+      EXPECTED_ENDWEAVE_SHA256: 3eac84543faaee7bc658a301b1a8ed8b4c147e4eb594065c6e278bbb47596a6c
 
     steps:
       - name: Checkout merged main and VoiceCraft v1.7.1 submodule
@@ -37,7 +39,7 @@ jobs:
           set -euo pipefail
           test "$(git -C VoiceCraft.Upstream rev-parse HEAD)" = "85aaccccbb58adb23e8c87144e8b1c24bf4b2011"
 
-      - name: Apply production runtime patches
+      - name: Apply production runtime patches + MCSV Endweave V2
         shell: bash
         run: |
           set -euo pipefail
@@ -52,6 +54,8 @@ jobs:
           python VoiceCraft.Guest.Patch/apply_legal_compliance_patch.py .
           python tools/apply_mcsv_integration.py .
           python tools/apply_mcsv_theme_guide_fix.py .
+          python tools/apply_mcsv_endweave_v2.py .
+          python tools/apply_mcsv_endweave_v2_ui.py .
 
       - name: Set production Android identity
         shell: bash
@@ -89,11 +93,19 @@ jobs:
           grep -q 'McsvVoiceCraftInstaller.InstallAsync' VoiceCraft.Server.Android/ModernMainActivity.cs
           grep -q 'วิธีสร้าง API Key:' VoiceCraft.Server.Android/ModernMainActivity.cs
           ! grep -q 'ดูวิธีเอา API Key\|HOW TO GET API KEY' VoiceCraft.Server.Android/ModernMainActivity.cs
+          grep -q 'EndweaveVersion = "0.5.1"' VoiceCraft.Server.Android/McsvEndweaveCatalog.cs
+          grep -q 'cp312-abi3-manylinux_2_28_x86_64.whl' VoiceCraft.Server.Android/McsvEndweaveCatalog.cs
+          grep -q 'voicecraft-endweave-v2-preinstall' VoiceCraft.Server.Android/McsvVoiceCraftInstaller.cs
+          grep -q 'McsvPythonEnvironmentValidator.ValidateAsync' VoiceCraft.Server.Android/McsvVoiceCraftInstaller.cs
+          grep -q 'McsvEndweaveInstaller.InstallAsync' VoiceCraft.Server.Android/McsvVoiceCraftInstaller.cs
+          grep -q 'McsvInstallVerifier.VerifyConfigAndActiveWorldAsync' VoiceCraft.Server.Android/McsvVoiceCraftInstaller.cs
+          grep -q 'McsvStartupVerifier.VerifyAsync' VoiceCraft.Server.Android/McsvVoiceCraftInstaller.cs
+          grep -q 'Ready — Endweave + VoiceCraft online' VoiceCraft.Server.Android/McsvVoiceCraftInstaller.cs
           grep -q 'VoiceRangeFadeStartRatio = 0.50f' VoiceCraft.Server.Android/EndstoneBridgeController.cs
           grep -q 'MathF.Pow(linearFactor, 1.5f)' VoiceCraft.Upstream/VoiceCraft.Network/Audio/Effects/ProximityEffect.cs
           grep -q 'version = "0.2.8"' VoiceCraft.Endstone/pyproject.toml
-          grep -q '<ApplicationVersion>18</ApplicationVersion>' VoiceCraft.Server.Android/VoiceCraft.Server.Android.csproj
-          grep -q '<ApplicationDisplayVersion>1.7.1-android-phase2-ui5-mcsv-v1</ApplicationDisplayVersion>' VoiceCraft.Server.Android/VoiceCraft.Server.Android.csproj
+          grep -q '<ApplicationVersion>19</ApplicationVersion>' VoiceCraft.Server.Android/VoiceCraft.Server.Android.csproj
+          grep -q '<ApplicationDisplayVersion>1.7.1-android-phase2-ui5-mcsv-v2-endweave</ApplicationDisplayVersion>' VoiceCraft.Server.Android/VoiceCraft.Server.Android.csproj
 
       - name: Setup .NET 10
         uses: actions/setup-dotnet@v4
@@ -132,7 +144,7 @@ jobs:
           test -n "$signed"
           cp "$signed" "release-assets/$APK_NAME"
 
-      - name: Fetch canonical Endstone plugin and Item Mic addon
+      - name: Fetch canonical VoiceCraft plugin Item Mic and Endweave
         shell: bash
         run: |
           set -euo pipefail
@@ -142,8 +154,12 @@ jobs:
           curl -fL --retry 3 --retry-delay 2 \
             "https://github.com/samsosleepy2007/VoiceCraft-Server-Mobile-Unofficial/releases/download/v1.7.1-itemmic2.4.0-hidden-single/$ADDON_NAME" \
             -o "release-assets/$ADDON_NAME"
+          curl -fL --retry 3 --retry-delay 2 \
+            "https://github.com/EndstoneMC/endweave/releases/download/v0.5.1/$ENDWEAVE_NAME" \
+            -o "release-assets/$ENDWEAVE_NAME"
           echo "$EXPECTED_PLUGIN_SHA256  release-assets/$PLUGIN_NAME" | sha256sum -c -
           echo "$EXPECTED_ADDON_SHA256  release-assets/$ADDON_NAME" | sha256sum -c -
+          echo "$EXPECTED_ENDWEAVE_SHA256  release-assets/$ENDWEAVE_NAME" | sha256sum -c -
 
       - name: Generate release checksums and notes
         shell: bash
@@ -151,39 +167,43 @@ jobs:
           set -euo pipefail
           (
             cd release-assets
-            sha256sum "$APK_NAME" "$PLUGIN_NAME" "$ADDON_NAME" > SHA256SUMS.txt
+            sha256sum "$APK_NAME" "$PLUGIN_NAME" "$ADDON_NAME" "$ENDWEAVE_NAME" > SHA256SUMS.txt
           )
           cat > release-notes.md <<'EOF'
-          ## VoiceCraft Server Mobile — MCSV Integration V1
+          ## VoiceCraft Server Mobile — MCSV Endweave V2
 
-          This release contains the complete VoiceCraft server package. All three required runtime components are attached to this release so users do not need to hunt through older releases.
+          This release contains the complete VoiceCraft MCSV package, including Endweave protocol compatibility support.
 
           ### Included files
-          - **Android App APK** — `VoiceCraft-Server-Mobile-MCSV-V1-arm64-Signed.apk`
-          - **Endstone Plugin 0.2.8** — `endstone_voicecraft-0.2.8-py3-none-any.whl`
+          - **Android App APK** — `VoiceCraft-Server-Mobile-MCSV-V2-Endweave-arm64-Signed.apk`
+          - **VoiceCraft Endstone Plugin 0.2.8** — `endstone_voicecraft-0.2.8-py3-none-any.whl`
           - **VoiceCraft Item Mic Addon 2.4.0** — `VoiceCraft_ItemMic_v2.4.0.mcaddon`
+          - **Endweave 0.5.1 Linux Python 3.12+** — `endstone_endweave-0.5.1-cp312-abi3-manylinux_2_28_x86_64.whl`
           - **Checksums** — `SHA256SUMS.txt`
 
-          ### MCSV Integration V1
-          - Adds one-tap MCSV installation/update for VoiceCraft.
-          - Automatically installs the Endstone plugin and Item Mic Behavior/Resource Packs.
-          - Updates the active world's pack JSON files.
-          - Writes the VoiceCraft relay configuration and restarts the MCSV server after installation.
-          - Stores the MCSV API key using Android Keystore-backed encrypted storage.
-          - MCSV API-key setup instructions are shown inline under the MCSV description; the separate guide button was removed.
+          ### MCSV Endweave V2
+          - Detects Endstone runtime, OS, Python version and CPU architecture before choosing a native Endweave wheel.
+          - Validates Python package metadata before installation to catch broken metadata that would make pip fail.
+          - Requires a safety backup before changing server files.
+          - Installs the matching Endweave wheel before the VoiceCraft Endstone plugin.
+          - Installs and verifies Item Mic Behavior/Resource Packs and active-world pack JSON.
+          - Writes and reads back VoiceCraft Relay / Voice Range configuration.
+          - Restarts the server, waits for Running, then checks startup logs for both Endweave and VoiceCraft.
+          - Does not report Ready if startup contains invalid-version, unsupported-wheel or missing-package errors.
 
           ### Production components
           - VoiceCraft upstream: **v1.7.1** pinned to `85aaccccbb58adb23e8c87144e8b1c24bf4b2011`
-          - Android: **1.7.1-android-phase2-ui5-mcsv-v1** / version code **18**
-          - Endstone: **0.2.8**
+          - Android: **1.7.1-android-phase2-ui5-mcsv-v2-endweave** / version code **19**
+          - VoiceCraft Endstone plugin: **0.2.8**
+          - Endweave: **0.5.1**
           - Relay protocol: **0.2.1 / protocol 1**
           - Item Mic: **2.4.0 Hidden Single Mic**
           - Voice Range + StrongFade50 preserved
 
-          ### Installation
-          For MCSV users, configure Render Relay / Server ID / Bridge Secret in the app, then use the MCSV section and paste a Full access MCSV API key. The app installs the plugin and addon automatically.
+          ### MCSV automatic installation
+          Configure Render Relay / Server ID / Bridge Secret in the app and use a Full access MCSV API key. The app selects the correct Endweave wheel for the detected server environment automatically; users do not need to choose a wheel manually.
 
-          Manual installation is still possible using the attached `.whl` and `.mcaddon` files.
+          The attached Endweave wheel is the common MCSV Linux x86_64 Python 3.12+ build for manual installation. The automatic installer can select the other verified v0.5.1 wheel variants when required.
           EOF
 
       - name: Create or update GitHub Release with complete package
@@ -196,6 +216,7 @@ jobs:
             "release-assets/$APK_NAME"
             "release-assets/$PLUGIN_NAME"
             "release-assets/$ADDON_NAME"
+            "release-assets/$ENDWEAVE_NAME"
             "release-assets/SHA256SUMS.txt"
           )
           if gh release view "$TAG" >/dev/null 2>&1; then
@@ -211,6 +232,6 @@ jobs:
       - name: Upload complete release bundle as CI artifact
         uses: actions/upload-artifact@v4
         with:
-          name: VoiceCraft-MCSV-V1-Complete-Release
+          name: VoiceCraft-MCSV-Endweave-V2-Complete-Release
           if-no-files-found: error
           path: release-assets/*
