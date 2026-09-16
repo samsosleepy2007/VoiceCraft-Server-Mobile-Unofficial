@@ -48,6 +48,57 @@ internal static class McsvInstallVerifier
             cancellationToken);
     }
 
+    internal static async Task VerifyConfigAndActiveWorldAsync(
+        McsvApiClient api,
+        string expectedServerId,
+        Action<string>? progress,
+        CancellationToken cancellationToken)
+    {
+        progress?.Invoke("Verifying VoiceCraft config and active world…");
+
+        var config = await McsvEndweaveSupport.ReadTextAsync(
+            api,
+            "/plugins/voicecraft/config.toml",
+            cancellationToken);
+        if (!config.Contains("[bridge]", StringComparison.Ordinal) ||
+            !config.Contains("enabled = true", StringComparison.Ordinal) ||
+            !config.Contains("[voice_range]", StringComparison.Ordinal) ||
+            !config.Contains(
+                $"server_id = \"{Toml(expectedServerId.Trim())}\"",
+                StringComparison.Ordinal))
+            throw new McsvApiException(
+                "VoiceCraft config.toml verification failed after writing Relay/Voice Range configuration.");
+
+        var properties = await McsvEndweaveSupport.ReadTextAsync(
+            api,
+            "/server.properties",
+            cancellationToken);
+        var levelName = ParseLevelName(properties);
+        if (string.IsNullOrWhiteSpace(levelName))
+            levelName = "Bedrock level";
+        if (levelName.Contains('/') || levelName.Contains('\\') || levelName.Contains("..", StringComparison.Ordinal))
+            throw new McsvApiException("Unsafe level-name detected while verifying Item Mic world activation.");
+
+        var worldRoot = "/worlds/" + levelName;
+        var behaviorPacks = await McsvEndweaveSupport.ReadTextAsync(
+            api,
+            worldRoot + "/world_behavior_packs.json",
+            cancellationToken);
+        var resourcePacks = await McsvEndweaveSupport.ReadTextAsync(
+            api,
+            worldRoot + "/world_resource_packs.json",
+            cancellationToken);
+
+        VerifyPackList(
+            behaviorPacks,
+            ItemMicBehaviorPackUuid,
+            worldRoot + "/world_behavior_packs.json");
+        VerifyPackList(
+            resourcePacks,
+            ItemMicResourcePackUuid,
+            worldRoot + "/world_resource_packs.json");
+    }
+
     private static async Task ValidatePackManifestAsync(
         McsvApiClient api,
         string path,
@@ -74,6 +125,65 @@ internal static class McsvInstallVerifier
             throw new McsvApiException($"Item Mic {label} manifest is invalid JSON: {path}");
         }
     }
+
+    private static void VerifyPackList(string json, string expectedUuid, string path)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(json);
+            if (document.RootElement.ValueKind != JsonValueKind.Array)
+                throw new McsvApiException($"{path} is not a JSON array.");
+
+            foreach (var item in document.RootElement.EnumerateArray())
+            {
+                if (item.ValueKind != JsonValueKind.Object ||
+                    !item.TryGetProperty("pack_id", out var packId) ||
+                    packId.ValueKind != JsonValueKind.String ||
+                    !string.Equals(packId.GetString(), expectedUuid, StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                if (!item.TryGetProperty("version", out var version) ||
+                    version.ValueKind != JsonValueKind.Array ||
+                    version.GetArrayLength() != 3)
+                    throw new McsvApiException($"VoiceCraft Item Mic pack has an invalid version entry in {path}.");
+
+                var values = version.EnumerateArray().Select(value => value.GetInt32()).ToArray();
+                if (values.SequenceEqual(new[] { 2, 4, 0 }))
+                    return;
+
+                throw new McsvApiException(
+                    $"VoiceCraft Item Mic pack version in {path} is not 2.4.0.");
+            }
+
+            throw new McsvApiException(
+                $"VoiceCraft Item Mic pack {expectedUuid} is not enabled in {path}.");
+        }
+        catch (JsonException)
+        {
+            throw new McsvApiException($"{path} is invalid JSON after Item Mic activation.");
+        }
+    }
+
+    private static string ParseLevelName(string serverProperties)
+    {
+        using var reader = new StringReader(serverProperties ?? string.Empty);
+        while (reader.ReadLine() is { } line)
+        {
+            var trimmed = line.Trim();
+            if (trimmed.StartsWith("#", StringComparison.Ordinal) ||
+                !trimmed.StartsWith("level-name=", StringComparison.OrdinalIgnoreCase))
+                continue;
+            return trimmed["level-name=".Length..].Trim();
+        }
+        return string.Empty;
+    }
+
+    private static string Toml(string value) =>
+        (value ?? string.Empty)
+            .Replace("\\", "\\\\", StringComparison.Ordinal)
+            .Replace("\"", "\\\"", StringComparison.Ordinal)
+            .Replace("\r", string.Empty, StringComparison.Ordinal)
+            .Replace("\n", string.Empty, StringComparison.Ordinal);
 
     private static void RequireFile(
         IEnumerable<McsvEndweaveFileEntry> entries,
