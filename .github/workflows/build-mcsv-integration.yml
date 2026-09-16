@@ -109,7 +109,7 @@ jobs:
           check "theme-aware MCSV dialogs" grep -q 'ThemedDialogHelper.Builder(this)' VoiceCraft.Server.Android/ModernMainActivity.cs
           check "dark/light custom surface" grep -q 'Background = Solid(Surface)' VoiceCraft.Server.Android/ModernMainActivity.cs
           check "old oversized guide removed from UI" bash -c '! grep -q "Resource.Drawable.mcsv_api_key_guide" VoiceCraft.Server.Android/ModernMainActivity.cs'
-          check "no raw one-argument AlertDialog builders remain" bash -c '! grep -R -n --include="*.cs" -E "new (Android\\.App\\.)?AlertDialog\\.Builder\\((this|activity)\\)" VoiceCraft.Server.Android'
+          check "no raw one-argument AlertDialog builders remain outside helper" bash -c '! grep -R -n --include="*.cs" --exclude="ThemedDialogHelper.cs" -E "new (Android\\.App\\.)?AlertDialog\\.Builder\\((this|activity)\\)" VoiceCraft.Server.Android'
           check "conditional visibility" grep -q 'RefreshMcsvCardVisibility(ready)' VoiceCraft.Server.Android/ModernMainActivity.cs
           check "installer wired to UI" grep -q 'McsvVoiceCraftInstaller.InstallAsync' VoiceCraft.Server.Android/ModernMainActivity.cs
           check "version code 17" grep -q '<ApplicationVersion>17</ApplicationVersion>' VoiceCraft.Server.Android/VoiceCraft.Server.Android.csproj
