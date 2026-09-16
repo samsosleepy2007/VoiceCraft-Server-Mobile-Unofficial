@@ -83,7 +83,7 @@ def main() -> None:
         card.AddView(image, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MatchParent, Dp(imageHeightDp)));
 
         var hint = Label(T("แตะภาพเพื่อดูขนาดใหญ่", "Tap the image to view larger"), 10, Muted);
-        hint.SetGravity(GravityFlags.CenterHorizontal);
+        hint.Gravity = GravityFlags.CenterHorizontal;
         hint.SetPadding(0, Dp(7), 0, 0);
         card.AddView(hint);
         return card;
