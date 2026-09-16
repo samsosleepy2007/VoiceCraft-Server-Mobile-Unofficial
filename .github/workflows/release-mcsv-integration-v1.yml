@@ -1,0 +1,216 @@
+name: Release MCSV Integration V1
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/release-mcsv-integration-v1.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      TAG: v1.7.1-android-phase2-ui5-mcsv-v1-endstone0.2.8-relay0.2.1-itemmic2.4.0
+      RELEASE_NAME: VoiceCraft Server Mobile MCSV Integration V1
+      APP_DISPLAY_VERSION: 1.7.1-android-phase2-ui5-mcsv-v1
+      APP_VERSION_CODE: "18"
+      APK_NAME: VoiceCraft-Server-Mobile-MCSV-V1-arm64-Signed.apk
+      PLUGIN_NAME: endstone_voicecraft-0.2.8-py3-none-any.whl
+      ADDON_NAME: VoiceCraft_ItemMic_v2.4.0.mcaddon
+      EXPECTED_PLUGIN_SHA256: b6ac91c8e02441edb2476af3c473f58baf70fd99189c702342389931997840ea
+      EXPECTED_ADDON_SHA256: c25a6bebe7e13f188c7dda21135598fe9d478960364576d4015b42e25c1430b8
+
+    steps:
+      - name: Checkout merged main and VoiceCraft v1.7.1 submodule
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Verify pinned upstream
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C VoiceCraft.Upstream rev-parse HEAD)" = "85aaccccbb58adb23e8c87144e8b1c24bf4b2011"
+
+      - name: Apply production runtime patches
+        shell: bash
+        run: |
+          set -euo pipefail
+          python tools/apply_phase1.py VoiceCraft.Upstream
+          python tools/apply_android_console_fix.py VoiceCraft.Upstream
+          python tools/apply_android_tcp_mchttp.py VoiceCraft.Upstream
+          python tools/apply_bridge_runtime.py VoiceCraft.Upstream
+          python tools/apply_render_api_core.py .
+          python VoiceCraft.Guest.Patch/apply_guest_account_patch.py .
+          python tools/apply_item_mic_bridge_patch.py .
+          python tools/apply_voice_range_patch.py .
+          python VoiceCraft.Guest.Patch/apply_legal_compliance_patch.py .
+          python tools/apply_mcsv_integration.py .
+          python tools/apply_mcsv_theme_guide_fix.py .
+
+      - name: Set production Android identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import os, re
+
+          display = os.environ["APP_DISPLAY_VERSION"]
+          code = os.environ["APP_VERSION_CODE"]
+          csproj = Path("VoiceCraft.Server.Android/VoiceCraft.Server.Android.csproj")
+          text = csproj.read_text(encoding="utf-8")
+          text, n1 = re.subn(r"<ApplicationVersion>\d+</ApplicationVersion>", f"<ApplicationVersion>{code}</ApplicationVersion>", text, count=1)
+          text, n2 = re.subn(r"<ApplicationDisplayVersion>[^<]+</ApplicationDisplayVersion>", f"<ApplicationDisplayVersion>{display}</ApplicationDisplayVersion>", text, count=1)
+          if n1 != 1 or n2 != 1:
+              raise SystemExit("Could not set production Android identity")
+          csproj.write_text(text, encoding="utf-8")
+
+          bridge = Path("VoiceCraft.Server.Android/EndstoneBridgeController.cs")
+          text = bridge.read_text(encoding="utf-8")
+          text, n = re.subn(r'appVersion = "[^"]+"', f'appVersion = "{display}"', text, count=1)
+          if n != 1:
+              raise SystemExit("Could not set production bridge appVersion")
+          bridge.write_text(text, encoding="utf-8")
+          PY
+
+      - name: Validate release guards
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q 'https://api.mcsv.me/api/v1/' VoiceCraft.Server.Android/McsvApiClient.cs
+          grep -q 'AllowAutoRedirect = false' VoiceCraft.Server.Android/McsvApiClient.cs
+          grep -q 'KeystoreJsonStore' VoiceCraft.Server.Android/McsvTokenStore.cs
+          grep -q 'McsvVoiceCraftInstaller.InstallAsync' VoiceCraft.Server.Android/ModernMainActivity.cs
+          grep -q 'วิธีสร้าง API Key:' VoiceCraft.Server.Android/ModernMainActivity.cs
+          ! grep -q 'ดูวิธีเอา API Key\|HOW TO GET API KEY' VoiceCraft.Server.Android/ModernMainActivity.cs
+          grep -q 'VoiceRangeFadeStartRatio = 0.50f' VoiceCraft.Server.Android/EndstoneBridgeController.cs
+          grep -q 'MathF.Pow(linearFactor, 1.5f)' VoiceCraft.Upstream/VoiceCraft.Network/Audio/Effects/ProximityEffect.cs
+          grep -q 'version = "0.2.8"' VoiceCraft.Endstone/pyproject.toml
+          grep -q '<ApplicationVersion>18</ApplicationVersion>' VoiceCraft.Server.Android/VoiceCraft.Server.Android.csproj
+          grep -q '<ApplicationDisplayVersion>1.7.1-android-phase2-ui5-mcsv-v1</ApplicationDisplayVersion>' VoiceCraft.Server.Android/VoiceCraft.Server.Android.csproj
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+
+      - name: Install Android API 36
+        shell: bash
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platform-tools" "platforms;android-36" "build-tools;36.0.0"
+
+      - name: Install .NET Android workload
+        run: dotnet workload install android
+
+      - name: Build production Android ARM64 APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          dotnet restore VoiceCraft.Server.Android/VoiceCraft.Server.Android.csproj
+          dotnet build VoiceCraft.Server.Android/VoiceCraft.Server.Android.csproj -c Release --no-restore
+          dotnet publish VoiceCraft.Server.Android/VoiceCraft.Server.Android.csproj -c Release -r android-arm64 --no-restore
+          mkdir -p release-assets
+          signed=$(find VoiceCraft.Server.Android/bin/Release/net10.0-android/android-arm64/publish -maxdepth 1 -name '*-Signed.apk' -print -quit)
+          test -n "$signed"
+          cp "$signed" "release-assets/$APK_NAME"
+
+      - name: Fetch canonical Endstone plugin and Item Mic addon
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fL --retry 3 --retry-delay 2 \
+            "https://github.com/samsosleepy2007/VoiceCraft-Server-Mobile-Unofficial/releases/download/v1.7.1-android-phase2-ui5-voice-range-strongfade50-endstone0.2.8-relay0.2.1-itemmic2.3.0/$PLUGIN_NAME" \
+            -o "release-assets/$PLUGIN_NAME"
+          curl -fL --retry 3 --retry-delay 2 \
+            "https://github.com/samsosleepy2007/VoiceCraft-Server-Mobile-Unofficial/releases/download/v1.7.1-itemmic2.4.0-hidden-single/$ADDON_NAME" \
+            -o "release-assets/$ADDON_NAME"
+          echo "$EXPECTED_PLUGIN_SHA256  release-assets/$PLUGIN_NAME" | sha256sum -c -
+          echo "$EXPECTED_ADDON_SHA256  release-assets/$ADDON_NAME" | sha256sum -c -
+
+      - name: Generate release checksums and notes
+        shell: bash
+        run: |
+          set -euo pipefail
+          (
+            cd release-assets
+            sha256sum "$APK_NAME" "$PLUGIN_NAME" "$ADDON_NAME" > SHA256SUMS.txt
+          )
+          cat > release-notes.md <<'EOF'
+          ## VoiceCraft Server Mobile — MCSV Integration V1
+
+          This release contains the complete VoiceCraft server package. All three required runtime components are attached to this release so users do not need to hunt through older releases.
+
+          ### Included files
+          - **Android App APK** — `VoiceCraft-Server-Mobile-MCSV-V1-arm64-Signed.apk`
+          - **Endstone Plugin 0.2.8** — `endstone_voicecraft-0.2.8-py3-none-any.whl`
+          - **VoiceCraft Item Mic Addon 2.4.0** — `VoiceCraft_ItemMic_v2.4.0.mcaddon`
+          - **Checksums** — `SHA256SUMS.txt`
+
+          ### MCSV Integration V1
+          - Adds one-tap MCSV installation/update for VoiceCraft.
+          - Automatically installs the Endstone plugin and Item Mic Behavior/Resource Packs.
+          - Updates the active world's pack JSON files.
+          - Writes the VoiceCraft relay configuration and restarts the MCSV server after installation.
+          - Stores the MCSV API key using Android Keystore-backed encrypted storage.
+          - MCSV API-key setup instructions are shown inline under the MCSV description; the separate guide button was removed.
+
+          ### Production components
+          - VoiceCraft upstream: **v1.7.1** pinned to `85aaccccbb58adb23e8c87144e8b1c24bf4b2011`
+          - Android: **1.7.1-android-phase2-ui5-mcsv-v1** / version code **18**
+          - Endstone: **0.2.8**
+          - Relay protocol: **0.2.1 / protocol 1**
+          - Item Mic: **2.4.0 Hidden Single Mic**
+          - Voice Range + StrongFade50 preserved
+
+          ### Installation
+          For MCSV users, configure Render Relay / Server ID / Bridge Secret in the app, then use the MCSV section and paste a Full access MCSV API key. The app installs the plugin and addon automatically.
+
+          Manual installation is still possible using the attached `.whl` and `.mcaddon` files.
+          EOF
+
+      - name: Create or update GitHub Release with complete package
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          assets=(
+            "release-assets/$APK_NAME"
+            "release-assets/$PLUGIN_NAME"
+            "release-assets/$ADDON_NAME"
+            "release-assets/SHA256SUMS.txt"
+          )
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release edit "$TAG" --title "$RELEASE_NAME" --notes-file release-notes.md
+            gh release upload "$TAG" "${assets[@]}" --clobber
+          else
+            gh release create "$TAG" "${assets[@]}" \
+              --target "$GITHUB_SHA" \
+              --title "$RELEASE_NAME" \
+              --notes-file release-notes.md
+          fi
+
+      - name: Upload complete release bundle as CI artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: VoiceCraft-MCSV-V1-Complete-Release
+          if-no-files-found: error
+          path: release-assets/*

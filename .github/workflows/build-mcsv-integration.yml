@@ -1,0 +1,157 @@
+name: Build MCSV Integration V1
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [mcsv-integration-v1]
+    paths:
+      - "VoiceCraft.Guest.Patch/VoiceCraft.Server.Android/Mcsv*.cs"
+      - "VoiceCraft.Guest.Patch/VoiceCraft.Server.Android/ThemedDialogHelper.cs"
+      - "VoiceCraft.Guest.Patch/VoiceCraft.Server.Android/Resources/drawable/mcsv_logo.webp"
+      - "tools/apply_mcsv_integration.py"
+      - "tools/apply_mcsv_theme_guide_fix.py"
+      - ".github/workflows/build-mcsv-integration.yml"
+  pull_request:
+    paths:
+      - "VoiceCraft.Guest.Patch/VoiceCraft.Server.Android/Mcsv*.cs"
+      - "VoiceCraft.Guest.Patch/VoiceCraft.Server.Android/ThemedDialogHelper.cs"
+      - "VoiceCraft.Guest.Patch/VoiceCraft.Server.Android/Resources/drawable/mcsv_logo.webp"
+      - "tools/apply_mcsv_integration.py"
+      - "tools/apply_mcsv_theme_guide_fix.py"
+      - ".github/workflows/build-mcsv-integration.yml"
+
+jobs:
+  build-android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout repository and VoiceCraft v1.7.1 submodule
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Verify pinned upstream
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C VoiceCraft.Upstream rev-parse HEAD)" = "85aaccccbb58adb23e8c87144e8b1c24bf4b2011"
+
+      - name: Apply production runtime patches + MCSV Integration V1
+        shell: bash
+        run: |
+          set -euo pipefail
+          python tools/apply_phase1.py VoiceCraft.Upstream
+          python tools/apply_android_console_fix.py VoiceCraft.Upstream
+          python tools/apply_android_tcp_mchttp.py VoiceCraft.Upstream
+          python tools/apply_bridge_runtime.py VoiceCraft.Upstream
+          python tools/apply_render_api_core.py .
+          python VoiceCraft.Guest.Patch/apply_guest_account_patch.py .
+          python tools/apply_item_mic_bridge_patch.py .
+          python tools/apply_voice_range_patch.py .
+          python VoiceCraft.Guest.Patch/apply_legal_compliance_patch.py .
+          python tools/apply_mcsv_integration.py .
+          python tools/apply_mcsv_theme_guide_fix.py .
+
+      - name: Set test Android identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import re
+
+          display = "1.7.1-android-phase2-ui5-mcsv-v1-inline-key-help-test"
+          csproj = Path("VoiceCraft.Server.Android/VoiceCraft.Server.Android.csproj")
+          text = csproj.read_text(encoding="utf-8")
+          text, n1 = re.subn(r"<ApplicationVersion>\d+</ApplicationVersion>", "<ApplicationVersion>18</ApplicationVersion>", text, count=1)
+          text, n2 = re.subn(r"<ApplicationDisplayVersion>[^<]+</ApplicationDisplayVersion>", f"<ApplicationDisplayVersion>{display}</ApplicationDisplayVersion>", text, count=1)
+          if n1 != 1 or n2 != 1:
+              raise SystemExit("Could not set MCSV inline-help test Android identity")
+          csproj.write_text(text, encoding="utf-8")
+
+          bridge = Path("VoiceCraft.Server.Android/EndstoneBridgeController.cs")
+          text = bridge.read_text(encoding="utf-8")
+          text, n = re.subn(r'appVersion = "[^"]+"', f'appVersion = "{display}"', text, count=1)
+          if n != 1:
+              raise SystemExit("Could not set MCSV inline-help bridge appVersion")
+          bridge.write_text(text, encoding="utf-8")
+          PY
+
+      - name: Validate MCSV Integration V1 guards
+        shell: bash
+        run: |
+          set -euo pipefail
+          check() { echo "[guard] $1"; shift; "$@"; }
+          check "MCSV patch scripts compile" python -m compileall -q tools/apply_mcsv_integration.py tools/apply_mcsv_theme_guide_fix.py
+          check "theme helper copied" test -s VoiceCraft.Server.Android/ThemedDialogHelper.cs
+          check "MCSV logo" test -s VoiceCraft.Server.Android/Resources/drawable/mcsv_logo.webp
+          check "token store" test -f VoiceCraft.Server.Android/McsvTokenStore.cs
+          check "API client" test -f VoiceCraft.Server.Android/McsvApiClient.cs
+          check "installer" test -f VoiceCraft.Server.Android/McsvVoiceCraftInstaller.cs
+          check "fixed API host" grep -q 'https://api.mcsv.me/api/v1/' VoiceCraft.Server.Android/McsvApiClient.cs
+          check "redirects blocked" grep -q 'AllowAutoRedirect = false' VoiceCraft.Server.Android/McsvApiClient.cs
+          check "Keystore protected token" grep -q 'KeystoreJsonStore' VoiceCraft.Server.Android/McsvTokenStore.cs
+          check "canonical Endstone wheel" grep -q 'endstone_voicecraft-0.2.8-py3-none-any.whl' VoiceCraft.Server.Android/McsvVoiceCraftInstaller.cs
+          check "Item Mic 2.4 release" grep -q 'v1.7.1-itemmic2.4.0-hidden-single' VoiceCraft.Server.Android/McsvVoiceCraftInstaller.cs
+          check "automatic restart" grep -q 'action = "restart"' VoiceCraft.Server.Android/McsvVoiceCraftInstaller.cs
+          check "inline API key help" grep -q 'วิธีสร้าง API Key:' VoiceCraft.Server.Android/ModernMainActivity.cs
+          check "API MCP path explained" grep -q 'เข้า MCSV แล้วกดเมนู API / MCP' VoiceCraft.Server.Android/ModernMainActivity.cs
+          check "Full access explained" grep -q 'เลือก “สิทธิ์เต็ม”' VoiceCraft.Server.Android/ModernMainActivity.cs
+          check "token destination explained" grep -q 'วาง Token ลงช่อง “MCSV API Key”' VoiceCraft.Server.Android/ModernMainActivity.cs
+          check "one-time token warning" grep -q 'MCSV จะแสดง Token เพียงครั้งเดียว' VoiceCraft.Server.Android/ModernMainActivity.cs
+          check "old guide button removed" bash -c '! grep -q "ดูวิธีเอา API Key\|HOW TO GET API KEY" VoiceCraft.Server.Android/ModernMainActivity.cs'
+          check "old guide methods removed" bash -c '! grep -q "ShowMcsvApiKeyGuide\|McsvGuideStep\|ShowMcsvGuideImage" VoiceCraft.Server.Android/ModernMainActivity.cs'
+          check "old guide resources not referenced" bash -c '! grep -q "Resource.Drawable.mcsv_api_" VoiceCraft.Server.Android/ModernMainActivity.cs'
+          check "theme-aware MCSV dialogs" grep -q 'ThemedDialogHelper.Builder(this)' VoiceCraft.Server.Android/ModernMainActivity.cs
+          check "dark/light custom surface" grep -q 'Background = Solid(Surface)' VoiceCraft.Server.Android/ModernMainActivity.cs
+          check "no raw one-argument AlertDialog builders remain outside helper" bash -c '! grep -R -n --include="*.cs" --exclude="ThemedDialogHelper.cs" -E "new (Android\\.App\\.)?AlertDialog\\.Builder\\((this|activity)\\)" VoiceCraft.Server.Android'
+          check "conditional visibility" grep -q 'RefreshMcsvCardVisibility(ready)' VoiceCraft.Server.Android/ModernMainActivity.cs
+          check "installer wired to UI" grep -q 'McsvVoiceCraftInstaller.InstallAsync' VoiceCraft.Server.Android/ModernMainActivity.cs
+          check "version code 18" grep -q '<ApplicationVersion>18</ApplicationVersion>' VoiceCraft.Server.Android/VoiceCraft.Server.Android.csproj
+          check "inline-help display version" grep -q '<ApplicationDisplayVersion>1.7.1-android-phase2-ui5-mcsv-v1-inline-key-help-test</ApplicationDisplayVersion>' VoiceCraft.Server.Android/VoiceCraft.Server.Android.csproj
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+
+      - name: Install Android API 36
+        shell: bash
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platform-tools" "platforms;android-36" "build-tools;36.0.0"
+
+      - name: Install .NET Android workload
+        run: dotnet workload install android
+
+      - name: Build Android ARM64 APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          dotnet restore VoiceCraft.Server.Android/VoiceCraft.Server.Android.csproj
+          dotnet build VoiceCraft.Server.Android/VoiceCraft.Server.Android.csproj -c Release --no-restore
+          dotnet publish VoiceCraft.Server.Android/VoiceCraft.Server.Android.csproj -c Release -r android-arm64 --no-restore
+          mkdir -p test-assets
+          signed=$(find VoiceCraft.Server.Android/bin/Release/net10.0-android/android-arm64/publish -maxdepth 1 -name '*-Signed.apk' -print -quit)
+          test -n "$signed"
+          cp "$signed" test-assets/VoiceCraft-Server-Mobile-MCSV-V1-InlineKeyHelp-Test-arm64-Signed.apk
+          sha256sum test-assets/VoiceCraft-Server-Mobile-MCSV-V1-InlineKeyHelp-Test-arm64-Signed.apk | tee test-assets/SHA256SUMS.txt
+
+      - name: Upload MCSV Integration V1 inline-help test APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: VoiceCraft-MCSV-Integration-V1-InlineKeyHelp-Test
+          path: test-assets/*
+          if-no-files-found: error

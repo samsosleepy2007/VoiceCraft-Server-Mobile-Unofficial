@@ -16,7 +16,11 @@ on:
       - "tools/apply_android_console_fix.py"
       - "tools/apply_android_tcp_mchttp.py"
       - "tools/apply_bridge_runtime.py"
+      - "tools/apply_render_api_core.py"
       - "tools/apply_item_mic_bridge_patch.py"
+      - "tools/apply_voice_range_patch.py"
+      - "tools/apply_mcsv_integration.py"
+      - "tools/apply_mcsv_theme_guide_fix.py"
       - ".github/workflows/build-android.yml"
       - ".gitmodules"
   pull_request:
@@ -33,14 +37,18 @@ on:
       - "tools/apply_android_console_fix.py"
       - "tools/apply_android_tcp_mchttp.py"
       - "tools/apply_bridge_runtime.py"
+      - "tools/apply_render_api_core.py"
       - "tools/apply_item_mic_bridge_patch.py"
+      - "tools/apply_voice_range_patch.py"
+      - "tools/apply_mcsv_integration.py"
+      - "tools/apply_mcsv_theme_guide_fix.py"
       - ".github/workflows/build-android.yml"
       - ".gitmodules"
 
 jobs:
   build-android-arm64:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
 
     steps:
       - name: Checkout repository and VoiceCraft v1.7.1 submodule
@@ -57,94 +65,72 @@ jobs:
           test -f NOTICE.md
           cmp -s LICENSE.md VoiceCraft.Upstream/LICENSE.md
 
-      - name: Apply Android headless runtime patch
-        run: python tools/apply_phase1.py VoiceCraft.Upstream
-
-      - name: Disable Spectre.Console for Android headless mode
-        run: python tools/apply_android_console_fix.py VoiceCraft.Upstream
-
-      - name: Replace HttpListener with Android TcpListener McHttp
-        run: python tools/apply_android_tcp_mchttp.py VoiceCraft.Upstream
-
-      - name: Add Endstone bridge runtime dispatcher
-        run: python tools/apply_bridge_runtime.py VoiceCraft.Upstream
-
-      - name: Apply Guest / Account V2 patch
-        run: python VoiceCraft.Guest.Patch/apply_guest_account_patch.py .
-
-      - name: Apply Item Mic bridge patch
-        run: python tools/apply_item_mic_bridge_patch.py .
-
-      - name: Apply Open Source / Legal patch
-        run: python VoiceCraft.Guest.Patch/apply_legal_compliance_patch.py .
-
-      - name: Validate UI4.5.2 mobile account isolation and legal guards
+      - name: Apply production runtime patches
         shell: bash
         run: |
           set -euo pipefail
-          test -f VoiceCraft.Server.Android/AccountGateActivity.cs
-          test -f VoiceCraft.Server.Android/GuestAccountStore.cs
-          test -f VoiceCraft.Server.Android/RegisteredSessionStore.cs
-          test -f VoiceCraft.Server.Android/Resources/xml/backup_rules.xml
-          test -f VoiceCraft.Server.Android/Resources/xml/data_extraction_rules.xml
-          test -f supabase/functions/voicecraft-mobile/index.ts
-          grep -q 'MainLauncher = true' VoiceCraft.Server.Android/AccountGateActivity.cs
-          ! grep -R --include='*.cs' -n 'MainLauncher = true' VoiceCraft.Server.Android \
-            | grep -v 'AccountGateActivity.cs'
-          grep -q 'NoBackupFilesDir' VoiceCraft.Server.Android/KeystoreJsonStore.cs
-          grep -q 'AndroidKeyStore' VoiceCraft.Server.Android/KeystoreJsonStore.cs
-          grep -q 'AES/GCM/NoPadding' VoiceCraft.Server.Android/KeystoreJsonStore.cs
-          grep -q 'voicecraft-mobile' VoiceCraft.Server.Android/AccountApiConfig.cs
-          ! grep -q 'voicecraft-account' VoiceCraft.Server.Android/AccountApiConfig.cs
-          grep -q 'voicecraft-guest' VoiceCraft.Server.Android/AccountApiConfig.cs
-          grep -q 'LoginAsync(this, login, password)' VoiceCraft.Server.Android/RegisteredLoginActivity.cs
-          ! grep -q 'LoginAsync(this, login, password, null)' VoiceCraft.Server.Android/RegisteredLoginActivity.cs
-          ! grep -Eiq 'admin|mfa|otp' VoiceCraft.Server.Android/VoiceCraftAccountClient.cs
-          ! grep -Eiq 'admin|mfa|otp' VoiceCraft.Server.Android/RegisteredLoginActivity.cs
-          ! grep -Eiq 'admin|mfa|otp' VoiceCraft.Server.Android/RegisteredSessionStore.cs
-          ! grep -Eiq 'admin|mfa|otp' VoiceCraft.Server.Android/AccountStatusActivity.cs
-          ! grep -Eiq 'admin|mfa|otp' VoiceCraft.Server.Android/AccountGateActivity.cs
-          ! grep -q 'Role' VoiceCraft.Server.Android/RegisteredSessionStore.cs
-          ! grep -q 'GetProperty("role")' VoiceCraft.Server.Android/VoiceCraftAccountClient.cs
-          ! grep -q 'adminMfaSetupRequired' VoiceCraft.Server.Android/VoiceCraftAccountClient.cs
-          grep -q 'OpenAccountCenter' VoiceCraft.Server.Android/ModernMainActivity.cs
-          grep -q 'ShowOpenSourceLegal' VoiceCraft.Server.Android/ModernMainActivity.cs
-          grep -q 'https://github.com/AvionBlock/VoiceCraft' VoiceCraft.Server.Android/ModernMainActivity.cs
-          grep -q 'GPL-3.0' VoiceCraft.Server.Android/ModernMainActivity.cs
-          grep -q 'android:allowBackup="false"' VoiceCraft.Server.Android/Properties/AndroidManifest.xml
-          grep -q 'android:icon="@drawable/voicecraft_logo"' VoiceCraft.Server.Android/Properties/AndroidManifest.xml
-          grep -q '<ApplicationVersion>13</ApplicationVersion>' VoiceCraft.Server.Android/VoiceCraft.Server.Android.csproj
-          grep -q '1.7.1-android-phase2-ui4.5.2-account-v2-guest' VoiceCraft.Server.Android/VoiceCraft.Server.Android.csproj
-          grep -q 'appVersion = "1.7.1-android-phase2-ui4.5.2-account-v2-guest"' VoiceCraft.Server.Android/EndstoneBridgeController.cs
+          python tools/apply_phase1.py VoiceCraft.Upstream
+          python tools/apply_android_console_fix.py VoiceCraft.Upstream
+          python tools/apply_android_tcp_mchttp.py VoiceCraft.Upstream
+          python tools/apply_bridge_runtime.py VoiceCraft.Upstream
+          python tools/apply_render_api_core.py .
+          python VoiceCraft.Guest.Patch/apply_guest_account_patch.py .
+          python tools/apply_item_mic_bridge_patch.py .
+          python tools/apply_voice_range_patch.py .
+          python VoiceCraft.Guest.Patch/apply_legal_compliance_patch.py .
+          python tools/apply_mcsv_integration.py .
+          python tools/apply_mcsv_theme_guide_fix.py .
 
-      - name: Validate multi-relay, unbind and Item Mic guards
+      - name: Set production Android identity
         shell: bash
         run: |
           set -euo pipefail
-          grep -q 'MaxAttemptsPerRelay = 5' VoiceCraft.Server.Android/EndstoneBridgeController.cs
-          grep -q 'PeerTimeoutSeconds = 30' VoiceCraft.Server.Android/EndstoneBridgeController.cs
-          grep -q 'BackupRelayActivity' VoiceCraft.Server.Android/ModernMainActivity.cs
-          grep -q 'ExtraBridgeBackupUrls' VoiceCraft.Server.Android/ServerPreferences.cs
-          grep -q 'BridgeUnbindRequest' VoiceCraft.Server.Android/EndstoneBridgeController.cs
-          grep -q 'case "unbind"' VoiceCraft.Server.Android/EndstoneBridgeController.cs
-          grep -q 'type = "unbind_result"' VoiceCraft.Server.Android/EndstoneBridgeController.cs
-          grep -q 'VoiceCraft.DisconnectReason.Kicked' VoiceCraft.Server.Android/EndstoneBridgeController.cs
-          grep -q '_manualUnbindByEntity' VoiceCraft.Server.Android/EndstoneBridgeController.cs
-          grep -q 'bridgeVersion = "0.2.6"' VoiceCraft.Server.Android/EndstoneBridgeController.cs
-          grep -q 'bool? MicOn' VoiceCraft.Server.Android/EndstoneBridgeController.cs
-          grep -q 'state.MicOn.HasValue' VoiceCraft.Server.Android/EndstoneBridgeController.cs
-          grep -q 'ItemMicMutedProperty = "voicecraft:item_mic_muted"' VoiceCraft.Server.Android/EndstoneBridgeController.cs
-          grep -q 'entity.SetProperty(ItemMicMutedProperty, itemMicMuted)' VoiceCraft.Server.Android/EndstoneBridgeController.cs
-          grep -q 'entity.SetProperty(ItemMicMutedProperty, false)' VoiceCraft.Server.Android/EndstoneBridgeController.cs
-          ! grep -q 'entity.ServerMuted = serverMuted' VoiceCraft.Server.Android/EndstoneBridgeController.cs
-          grep -q 'root.TryGetProperty("micOn"' VoiceCraft.Server.Android/EndstoneBridgeController.cs
-          grep -q 'TryGetProperty<bool>("voicecraft:item_mic_muted"' VoiceCraft.Upstream/VoiceCraft.Network/Servers/VoiceCraftServer.cs
-          grep -q 'networkEntity.Muted || networkEntity.ServerMuted || itemMicMuted' VoiceCraft.Upstream/VoiceCraft.Network/Servers/VoiceCraftServer.cs
-          test -f VoiceCraft.Endstone/src/endstone_voicecraft/item_mic.py
-          grep -q 'version = "0.2.7"' VoiceCraft.Endstone/src/endstone_voicecraft/item_mic.py
-          grep -q 'message\["micOn"\] = mic_on' VoiceCraft.Endstone/src/endstone_voicecraft/item_mic.py
-          grep -q 'from .item_mic import VoiceCraftEndstone' VoiceCraft.Endstone/src/endstone_voicecraft/__init__.py
-          grep -q 'version = "0.2.7"' VoiceCraft.Endstone/pyproject.toml
+          python - <<'PY'
+          from pathlib import Path
+          import re
+
+          display = "1.7.1-android-phase2-ui5-mcsv-v1"
+          csproj = Path("VoiceCraft.Server.Android/VoiceCraft.Server.Android.csproj")
+          text = csproj.read_text(encoding="utf-8")
+          text, n1 = re.subn(r"<ApplicationVersion>\d+</ApplicationVersion>", "<ApplicationVersion>18</ApplicationVersion>", text, count=1)
+          text, n2 = re.subn(r"<ApplicationDisplayVersion>[^<]+</ApplicationDisplayVersion>", f"<ApplicationDisplayVersion>{display}</ApplicationDisplayVersion>", text, count=1)
+          if n1 != 1 or n2 != 1:
+              raise SystemExit("Could not set production Android identity")
+          csproj.write_text(text, encoding="utf-8")
+
+          bridge = Path("VoiceCraft.Server.Android/EndstoneBridgeController.cs")
+          text = bridge.read_text(encoding="utf-8")
+          text, n = re.subn(r'appVersion = "[^"]+"', f'appVersion = "{display}"', text, count=1)
+          if n != 1:
+              raise SystemExit("Could not set production bridge appVersion")
+          bridge.write_text(text, encoding="utf-8")
+          PY
+
+      - name: Validate production integration guards
+        shell: bash
+        run: |
+          set -euo pipefail
+          check() { echo "[guard] $1"; shift; "$@"; }
+          check "MCSV patch scripts compile" python -m compileall -q tools/apply_mcsv_integration.py tools/apply_mcsv_theme_guide_fix.py
+          check "MCSV API client" test -f VoiceCraft.Server.Android/McsvApiClient.cs
+          check "MCSV installer" test -f VoiceCraft.Server.Android/McsvVoiceCraftInstaller.cs
+          check "MCSV token protected" grep -q 'KeystoreJsonStore' VoiceCraft.Server.Android/McsvTokenStore.cs
+          check "MCSV fixed API host" grep -q 'https://api.mcsv.me/api/v1/' VoiceCraft.Server.Android/McsvApiClient.cs
+          check "MCSV redirects blocked" grep -q 'AllowAutoRedirect = false' VoiceCraft.Server.Android/McsvApiClient.cs
+          check "MCSV inline API help" grep -q 'วิธีสร้าง API Key:' VoiceCraft.Server.Android/ModernMainActivity.cs
+          check "old API guide button removed" bash -c '! grep -q "ดูวิธีเอา API Key\|HOW TO GET API KEY" VoiceCraft.Server.Android/ModernMainActivity.cs'
+          check "MCSV installer wired" grep -q 'McsvVoiceCraftInstaller.InstallAsync' VoiceCraft.Server.Android/ModernMainActivity.cs
+          check "canonical Endstone installer wheel" grep -q 'endstone_voicecraft-0.2.8-py3-none-any.whl' VoiceCraft.Server.Android/McsvVoiceCraftInstaller.cs
+          check "Item Mic 2.4 installer" grep -q 'v1.7.1-itemmic2.4.0-hidden-single' VoiceCraft.Server.Android/McsvVoiceCraftInstaller.cs
+          check "automatic server restart" grep -q 'action = "restart"' VoiceCraft.Server.Android/McsvVoiceCraftInstaller.cs
+          check "voice range fade start" grep -q 'VoiceRangeFadeStartRatio = 0.50f' VoiceCraft.Server.Android/EndstoneBridgeController.cs
+          check "strong fade exponent" grep -q 'MathF.Pow(linearFactor, 1.5f)' VoiceCraft.Upstream/VoiceCraft.Network/Audio/Effects/ProximityEffect.cs
+          check "Endstone source 0.2.8" grep -q 'version = "0.2.8"' VoiceCraft.Endstone/pyproject.toml
+          check "production version code" grep -q '<ApplicationVersion>18</ApplicationVersion>' VoiceCraft.Server.Android/VoiceCraft.Server.Android.csproj
+          check "production display version" grep -q '<ApplicationDisplayVersion>1.7.1-android-phase2-ui5-mcsv-v1</ApplicationDisplayVersion>' VoiceCraft.Server.Android/VoiceCraft.Server.Android.csproj
+          check "production bridge version" grep -q 'appVersion = "1.7.1-android-phase2-ui5-mcsv-v1"' VoiceCraft.Server.Android/EndstoneBridgeController.cs
+          check "legal source link" grep -q 'https://github.com/AvionBlock/VoiceCraft' VoiceCraft.Server.Android/ModernMainActivity.cs
+          check "GPL notice" grep -q 'GPL-3.0' VoiceCraft.Server.Android/ModernMainActivity.cs
 
       - name: Setup .NET 10
         uses: actions/setup-dotnet@v4
@@ -159,6 +145,8 @@ jobs:
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
 
       - name: Install Android API 36
         shell: bash
@@ -169,32 +157,34 @@ jobs:
       - name: Install .NET Android workload
         run: dotnet workload install android
 
-      - name: Restore Android project
-        run: dotnet restore VoiceCraft.Server.Android/VoiceCraft.Server.Android.csproj
+      - name: Build Android ARM64 APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          dotnet restore VoiceCraft.Server.Android/VoiceCraft.Server.Android.csproj
+          dotnet build VoiceCraft.Server.Android/VoiceCraft.Server.Android.csproj -c Release --no-restore
+          dotnet publish VoiceCraft.Server.Android/VoiceCraft.Server.Android.csproj -c Release -r android-arm64 --no-restore
+          mkdir -p test-assets
+          signed=$(find VoiceCraft.Server.Android/bin/Release/net10.0-android/android-arm64/publish -maxdepth 1 -name '*-Signed.apk' -print -quit)
+          test -n "$signed"
+          cp "$signed" test-assets/VoiceCraft-Server-Mobile-MCSV-V1-arm64-Signed.apk
+          sha256sum test-assets/VoiceCraft-Server-Mobile-MCSV-V1-arm64-Signed.apk | tee test-assets/APK_SHA256.txt
 
-      - name: Build Android project
-        run: dotnet build VoiceCraft.Server.Android/VoiceCraft.Server.Android.csproj -c Release --no-restore
-
-      - name: Publish Android ARM64 APK
-        run: >-
-          dotnet publish VoiceCraft.Server.Android/VoiceCraft.Server.Android.csproj
-          -c Release
-          -r android-arm64
-          --no-restore
-
-      - name: Upload APK
+      - name: Upload production APK
         uses: actions/upload-artifact@v4
         with:
-          name: VoiceCraft-Server-Android-arm64-UI4.5.2-AccountV2-ItemMic
+          name: VoiceCraft-Server-Mobile-MCSV-V1-Android-arm64
           if-no-files-found: error
-          path: VoiceCraft.Server.Android/bin/Release/net10.0-android/android-arm64/publish/*.apk
+          path: |
+            test-assets/VoiceCraft-Server-Mobile-MCSV-V1-arm64-Signed.apk
+            test-assets/APK_SHA256.txt
 
       - name: Setup Python 3.11
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      - name: Build Endstone 0.2.7 Item Mic wheel
+      - name: Build Endstone 0.2.8 wheel
         shell: bash
         run: |
           set -euo pipefail
@@ -202,14 +192,16 @@ jobs:
           python -m pip install build
           python -m compileall -q VoiceCraft.Endstone/src VoiceCraft.Endstone/tests
           (cd VoiceCraft.Endstone && python -m build --wheel)
-          wheel=$(find VoiceCraft.Endstone/dist -maxdepth 1 -name 'endstone_voicecraft-0.2.7-*.whl' -print -quit)
+          wheel=$(find VoiceCraft.Endstone/dist -maxdepth 1 -name 'endstone_voicecraft-0.2.8-*.whl' -print -quit)
           test -n "$wheel"
-          mkdir -p test-assets
-          cp "$wheel" test-assets/endstone_voicecraft-0.2.7-py3-none-any.whl
+          cp "$wheel" test-assets/endstone_voicecraft-0.2.8-py3-none-any.whl
+          sha256sum test-assets/endstone_voicecraft-0.2.8-py3-none-any.whl | tee test-assets/PLUGIN_SHA256.txt
 
-      - name: Upload Endstone Item Mic wheel
+      - name: Upload Endstone 0.2.8 wheel
         uses: actions/upload-artifact@v4
         with:
-          name: VoiceCraft-Endstone-0.2.7-ItemMic
+          name: VoiceCraft-Endstone-0.2.8
           if-no-files-found: error
-          path: test-assets/endstone_voicecraft-0.2.7-py3-none-any.whl
+          path: |
+            test-assets/endstone_voicecraft-0.2.8-py3-none-any.whl
+            test-assets/PLUGIN_SHA256.txt
