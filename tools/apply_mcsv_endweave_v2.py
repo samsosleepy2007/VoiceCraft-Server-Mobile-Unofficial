@@ -31,14 +31,15 @@ def main() -> None:
     tools_replacement = '''        "files_decompress",
         "files_fetch_url",
         "power_action",
-        "server_overview"
+        "server_overview",
+        "logs_startup"
     };
 '''
     text = replace_once(
         text,
         tools_anchor,
         tools_replacement,
-        "server_overview required permission",
+        "post-start verification permissions",
     )
 
     preflight_anchor = '''        if (!root.Any(entry => entry.IsFile && entry.Name.Equals("server.properties", StringComparison.Ordinal)))
@@ -156,13 +157,18 @@ def main() -> None:
             throw new McsvApiException(
                 "MCSV server did not return to Running state within the verification window after restart.");
 
-        progress("Server is online — continuing verification…");
+        progress("Server is online — checking startup logs…");
+        await McsvStartupVerifier.VerifyAsync(
+            api,
+            progress,
+            cancellationToken);
+        progress("Ready — Endweave + VoiceCraft online");
 '''
     text = replace_once(
         text,
         restart_anchor,
         restart_replacement,
-        "require successful restart before completion",
+        "require successful restart and startup log verification",
     )
 
     installer.write_text(text, encoding="utf-8")
@@ -171,6 +177,7 @@ def main() -> None:
     required = [
         MARKER,
         '"server_overview"',
+        '"logs_startup"',
         "McsvEndweaveSupport.ValidatePreflightAsync",
         "McsvEndweaveSupport.DetectEnvironmentAsync",
         "McsvPythonEnvironmentValidator.ValidateAsync",
@@ -178,7 +185,8 @@ def main() -> None:
         "McsvEndweaveInstaller.InstallAsync",
         "McsvInstallVerifier.VerifyItemMicFilesAsync",
         "McsvInstallVerifier.VerifyConfigAndActiveWorldAsync",
-        "Server is online — continuing verification…",
+        "McsvStartupVerifier.VerifyAsync",
+        "Ready — Endweave + VoiceCraft online",
         'progress("Installing Endstone plugin…")',
     ]
     missing = [value for value in required if value not in final]
@@ -196,9 +204,9 @@ def main() -> None:
         raise RuntimeError("Config/world verification must complete before restart")
 
     wait_pos = final.index("await WaitUntilRunningAsync")
-    online_pos = final.index("Server is online — continuing verification…")
-    if wait_pos >= online_pos:
-        raise RuntimeError("Server must be confirmed Running before post-start verification")
+    startup_pos = final.index("McsvStartupVerifier.VerifyAsync")
+    if wait_pos >= startup_pos:
+        raise RuntimeError("Server must be confirmed Running before startup log verification")
 
     print(f"Applied MCSV Endweave V2 orchestration to {installer}")
 
