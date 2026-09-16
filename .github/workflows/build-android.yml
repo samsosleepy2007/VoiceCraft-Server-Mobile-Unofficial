@@ -123,8 +123,8 @@ jobs:
           check "canonical Endstone installer wheel" grep -q 'endstone_voicecraft-0.2.8-py3-none-any.whl' VoiceCraft.Server.Android/McsvVoiceCraftInstaller.cs
           check "Item Mic 2.4 installer" grep -q 'v1.7.1-itemmic2.4.0-hidden-single' VoiceCraft.Server.Android/McsvVoiceCraftInstaller.cs
           check "automatic server restart" grep -q 'action = "restart"' VoiceCraft.Server.Android/McsvVoiceCraftInstaller.cs
-          check "voice range patch" grep -q 'voicecraft.vr.value.' VoiceCraft.Server.Android/EndstoneBridgeController.cs
-          check "strong fade exponent" grep -q '1.5' VoiceCraft.Upstream/VoiceCraft.Network/Audio/Effects/ProximityEffect.cs
+          check "voice range fade start" grep -q 'VoiceRangeFadeStartRatio = 0.50f' VoiceCraft.Server.Android/EndstoneBridgeController.cs
+          check "strong fade exponent" grep -q 'MathF.Pow(linearFactor, 1.5f)' VoiceCraft.Upstream/VoiceCraft.Network/Audio/Effects/ProximityEffect.cs
           check "Endstone source 0.2.8" grep -q 'version = "0.2.8"' VoiceCraft.Endstone/pyproject.toml
           check "production version code" grep -q '<ApplicationVersion>18</ApplicationVersion>' VoiceCraft.Server.Android/VoiceCraft.Server.Android.csproj
           check "production display version" grep -q '<ApplicationDisplayVersion>1.7.1-android-phase2-ui5-mcsv-v1</ApplicationDisplayVersion>' VoiceCraft.Server.Android/VoiceCraft.Server.Android.csproj
