@@ -50,8 +50,6 @@ jobs:
           python tools/apply_item_mic_bridge_patch.py .
           python tools/apply_voice_range_patch.py .
           python VoiceCraft.Guest.Patch/apply_legal_compliance_patch.py .
-          # MCSV is applied after UI5/Render/Legal transforms, then the finalizer removes the old guide UI,
-          # inserts inline API-key instructions and audits all Android dialogs for theme consistency.
           python tools/apply_mcsv_integration.py .
           python tools/apply_mcsv_theme_guide_fix.py .
 
