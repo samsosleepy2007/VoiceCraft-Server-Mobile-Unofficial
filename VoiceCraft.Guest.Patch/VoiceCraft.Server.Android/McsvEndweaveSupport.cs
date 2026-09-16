@@ -8,6 +8,18 @@ internal sealed record McsvEndweavePreflight(
     string ServerType,
     string RuntimeRoot);
 
+internal sealed record McsvServerEnvironment(
+    string OperatingSystem,
+    string Architecture,
+    Version PythonVersion,
+    string EndstoneRuntimeVersion,
+    string RuntimePath,
+    string SitePackagesPath)
+{
+    internal string Summary =>
+        $"{OperatingSystem} {Architecture} • Python {PythonVersion.Major}.{PythonVersion.Minor} • Endstone {EndstoneRuntimeVersion}";
+}
+
 internal static class McsvEndweaveSupport
 {
     internal const string EndstoneRuntimeRoot = "/.endstone-runtime";
@@ -40,6 +52,98 @@ internal static class McsvEndweaveSupport
                 "Endstone runtime directory is empty. Start the Endstone server once and try again.");
 
         return new McsvEndweavePreflight(serverName, game, serverType, EndstoneRuntimeRoot);
+    }
+
+    internal static async Task<McsvServerEnvironment> DetectEnvironmentAsync(
+        McsvApiClient api,
+        JsonElement serverInfo,
+        CancellationToken cancellationToken)
+    {
+        var runtimeEntries = await ListAsync(api, EndstoneRuntimeRoot, cancellationToken);
+        var runtimeCandidates = runtimeEntries
+            .Where(entry => !entry.IsFile)
+            .Select(entry => new { entry.Name, Version = ParseVersion(entry.Name) })
+            .Where(item => item.Version != null)
+            .OrderByDescending(item => item.Version)
+            .ToArray();
+
+        if (runtimeCandidates.Length == 0)
+            throw new McsvApiException(
+                "Could not detect an Endstone runtime version under /.endstone-runtime.");
+
+        var runtimeVersion = runtimeCandidates[0].Version!;
+        var runtimeName = runtimeCandidates[0].Name;
+        var runtimePath = EndstoneRuntimeRoot + "/" + runtimeName;
+
+        var runtimeFiles = await ListAsync(api, runtimePath, cancellationToken);
+        if (!runtimeFiles.Any(entry => !entry.IsFile && entry.Name.Equals("lib", StringComparison.Ordinal)))
+            throw new McsvApiException(
+                $"Unsupported Endstone runtime layout at {runtimePath}; expected a Linux-style lib directory.");
+
+        var libPath = runtimePath + "/lib";
+        var libEntries = await ListAsync(api, libPath, cancellationToken);
+        var pythonCandidates = libEntries
+            .Where(entry => !entry.IsFile && entry.Name.StartsWith("python", StringComparison.OrdinalIgnoreCase))
+            .Select(entry => new
+            {
+                entry.Name,
+                Version = ParseVersion(entry.Name["python".Length..])
+            })
+            .Where(item => item.Version != null && item.Version.Major == 3)
+            .OrderByDescending(item => item.Version)
+            .ToArray();
+
+        if (pythonCandidates.Length == 0)
+            throw new McsvApiException(
+                $"Could not detect Python under {libPath}. Endweave requires Python 3.10 or newer.");
+
+        var pythonVersion = pythonCandidates[0].Version!;
+        var pythonPath = libPath + "/" + pythonCandidates[0].Name;
+        var sitePackagesPath = pythonPath + "/site-packages";
+        var pythonEntries = await ListAsync(api, pythonPath, cancellationToken);
+        if (!pythonEntries.Any(entry => !entry.IsFile && entry.Name.Equals("site-packages", StringComparison.Ordinal)))
+            throw new McsvApiException(
+                $"Python site-packages was not found at {sitePackagesPath}.");
+
+        var osHint = FindStringPropertyDeep(
+            serverInfo,
+            "os",
+            "operating_system",
+            "platform");
+        var operatingSystem = NormalizeOs(osHint);
+        if (operatingSystem == "unknown")
+            operatingSystem = "linux";
+
+        var archHint = FindStringPropertyDeep(
+            serverInfo,
+            "architecture",
+            "arch",
+            "cpu_arch",
+            "machine");
+        var architecture = NormalizeArchitecture(archHint);
+
+        if (architecture == "unknown")
+        {
+            var sitePackages = await ListAsync(api, sitePackagesPath, cancellationToken);
+            foreach (var entry in sitePackages)
+            {
+                architecture = NormalizeArchitecture(entry.Name);
+                if (architecture != "unknown")
+                    break;
+            }
+        }
+
+        if (architecture == "unknown")
+            throw new McsvApiException(
+                "Could not detect the server CPU architecture. Endweave installation stopped to avoid installing an incompatible native wheel.");
+
+        return new McsvServerEnvironment(
+            operatingSystem,
+            architecture,
+            pythonVersion,
+            runtimeVersion.ToString(),
+            runtimePath,
+            sitePackagesPath);
     }
 
     internal static async Task<List<McsvEndweaveFileEntry>> ListAsync(
@@ -91,6 +195,69 @@ internal static class McsvEndweaveSupport
             return content.GetString() ?? string.Empty;
 
         throw new McsvApiException("MCSV did not return text for " + path);
+    }
+
+    private static Version? ParseVersion(string value)
+    {
+        var normalized = (value ?? string.Empty).Trim();
+        if (normalized.StartsWith('v') || normalized.StartsWith('V'))
+            normalized = normalized[1..];
+        return Version.TryParse(normalized, out var version) ? version : null;
+    }
+
+    private static string NormalizeOs(string value)
+    {
+        var normalized = (value ?? string.Empty).Trim().ToLowerInvariant();
+        if (normalized.Contains("linux", StringComparison.Ordinal))
+            return "linux";
+        if (normalized.Contains("windows", StringComparison.Ordinal) ||
+            normalized.Contains("win32", StringComparison.Ordinal))
+            return "windows";
+        return "unknown";
+    }
+
+    private static string NormalizeArchitecture(string value)
+    {
+        var normalized = (value ?? string.Empty).Trim().ToLowerInvariant();
+        if (normalized.Contains("x86_64", StringComparison.Ordinal) ||
+            normalized.Contains("amd64", StringComparison.Ordinal) ||
+            normalized.Equals("x64", StringComparison.Ordinal))
+            return "x86_64";
+        if (normalized.Contains("aarch64", StringComparison.Ordinal) ||
+            normalized.Contains("arm64", StringComparison.Ordinal))
+            return "aarch64";
+        return "unknown";
+    }
+
+    private static string FindStringPropertyDeep(JsonElement element, params string[] names)
+    {
+        if (element.ValueKind == JsonValueKind.Object)
+        {
+            foreach (var property in element.EnumerateObject())
+            {
+                if (names.Any(name => property.Name.Equals(name, StringComparison.OrdinalIgnoreCase)) &&
+                    property.Value.ValueKind == JsonValueKind.String)
+                    return property.Value.GetString() ?? string.Empty;
+            }
+
+            foreach (var property in element.EnumerateObject())
+            {
+                var nested = FindStringPropertyDeep(property.Value, names);
+                if (!string.IsNullOrWhiteSpace(nested))
+                    return nested;
+            }
+        }
+        else if (element.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var item in element.EnumerateArray())
+            {
+                var nested = FindStringPropertyDeep(item, names);
+                if (!string.IsNullOrWhiteSpace(nested))
+                    return nested;
+            }
+        }
+
+        return string.Empty;
     }
 
     private static void RequireDirectory(
