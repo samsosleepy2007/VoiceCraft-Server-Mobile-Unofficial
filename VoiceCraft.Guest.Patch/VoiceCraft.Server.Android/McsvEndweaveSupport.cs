@@ -105,14 +105,41 @@ internal static class McsvEndweaveSupport
             throw new McsvApiException(
                 $"Python site-packages was not found at {sitePackagesPath}.");
 
+        // Endstone's own installed WHEEL metadata is the most reliable fallback
+        // when MCSV server_info does not expose host OS/CPU fields. A native
+        // Endstone wheel includes tags such as manylinux_*_x86_64.
+        var sitePackages = await ListAsync(api, sitePackagesPath, cancellationToken);
+        var endstoneDistInfo = sitePackages.FirstOrDefault(entry =>
+            !entry.IsFile &&
+            entry.Name.StartsWith("endstone-", StringComparison.OrdinalIgnoreCase) &&
+            entry.Name.EndsWith(".dist-info", StringComparison.OrdinalIgnoreCase));
+        var endstoneWheelMetadata = string.Empty;
+        if (endstoneDistInfo != null)
+        {
+            try
+            {
+                endstoneWheelMetadata = await ReadTextAsync(
+                    api,
+                    sitePackagesPath + "/" + endstoneDistInfo.Name + "/WHEEL",
+                    cancellationToken);
+            }
+            catch (McsvApiException)
+            {
+                // Continue with the other platform signals below. Unknown CPU
+                // architecture is still fatal, so this never causes a guess.
+            }
+        }
+
         var osHint = FindStringPropertyDeep(
             serverInfo,
             "os",
             "operating_system",
             "platform");
         var operatingSystem = NormalizeOs(osHint);
+        if (operatingSystem == "unknown" && !string.IsNullOrWhiteSpace(endstoneWheelMetadata))
+            operatingSystem = NormalizeOs(endstoneWheelMetadata);
         if (operatingSystem == "unknown")
-            operatingSystem = "linux";
+            operatingSystem = "linux"; // The validated runtime layout above is Linux-style.
 
         var archHint = FindStringPropertyDeep(
             serverInfo,
@@ -122,9 +149,11 @@ internal static class McsvEndweaveSupport
             "machine");
         var architecture = NormalizeArchitecture(archHint);
 
+        if (architecture == "unknown" && !string.IsNullOrWhiteSpace(endstoneWheelMetadata))
+            architecture = NormalizeArchitecture(endstoneWheelMetadata);
+
         if (architecture == "unknown")
         {
-            var sitePackages = await ListAsync(api, sitePackagesPath, cancellationToken);
             foreach (var entry in sitePackages)
             {
                 architecture = NormalizeArchitecture(entry.Name);
@@ -135,7 +164,7 @@ internal static class McsvEndweaveSupport
 
         if (architecture == "unknown")
             throw new McsvApiException(
-                "Could not detect the server CPU architecture. Endweave installation stopped to avoid installing an incompatible native wheel.");
+                "Could not detect the server CPU architecture from MCSV or Endstone WHEEL metadata. Endweave installation stopped to avoid installing an incompatible native wheel.");
 
         return new McsvServerEnvironment(
             operatingSystem,
