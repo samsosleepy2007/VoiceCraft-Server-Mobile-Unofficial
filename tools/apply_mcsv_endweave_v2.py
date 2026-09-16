@@ -80,6 +80,27 @@ def main() -> None:
         "Endweave before VoiceCraft plugin",
     )
 
+    item_mic_anchor = '''        progress("Installing Item Mic add-on…");
+        await InstallItemMicAsync(api, cancellationToken);
+
+        progress("Enabling add-on in active world…");
+'''
+    item_mic_replacement = '''        progress("Installing Item Mic add-on…");
+        await InstallItemMicAsync(api, cancellationToken);
+        await McsvInstallVerifier.VerifyItemMicFilesAsync(
+            api,
+            progress,
+            cancellationToken);
+
+        progress("Enabling add-on in active world…");
+'''
+    text = replace_once(
+        text,
+        item_mic_anchor,
+        item_mic_replacement,
+        "verify Item Mic files after install",
+    )
+
     installer.write_text(text, encoding="utf-8")
 
     final = installer.read_text(encoding="utf-8")
@@ -90,6 +111,7 @@ def main() -> None:
         "McsvPythonEnvironmentValidator.ValidateAsync",
         "McsvEndweaveCatalog.SelectWheel",
         "McsvEndweaveInstaller.InstallAsync",
+        "McsvInstallVerifier.VerifyItemMicFilesAsync",
         'progress("Installing Endstone plugin…")',
     ]
     missing = [value for value in required if value not in final]
