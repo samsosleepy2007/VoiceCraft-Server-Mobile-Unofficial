@@ -32,14 +32,15 @@ def main() -> None:
         "files_fetch_url",
         "power_action",
         "server_overview",
-        "logs_startup"
+        "logs_startup",
+        "backups_create"
     };
 '''
     text = replace_once(
         text,
         tools_anchor,
         tools_replacement,
-        "post-start verification permissions",
+        "V2 required permissions",
     )
 
     preflight_anchor = '''        if (!root.Any(entry => entry.IsFile && entry.Name.Equals("server.properties", StringComparison.Ordinal)))
@@ -77,6 +78,39 @@ def main() -> None:
         preflight_anchor,
         preflight_replacement,
         "runtime preflight and Endweave wheel selection",
+    )
+
+    backup_anchor = '''        var warning = string.Empty;
+        if (allowedTools.Contains("backups_create"))
+        {
+            progress("Creating safety backup…");
+            try
+            {
+                await api.CallToolAsync(
+                    "backups_create",
+                    new { name = "voicecraft-auto-install" },
+                    cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                warning = "Backup could not be created: " + SafeMessage(ex);
+            }
+        }
+
+'''
+    backup_replacement = '''        var warning = string.Empty;
+        progress("Creating required safety backup…");
+        await api.CallToolAsync(
+            "backups_create",
+            new { name = "voicecraft-endweave-v2-preinstall" },
+            cancellationToken);
+
+'''
+    text = replace_once(
+        text,
+        backup_anchor,
+        backup_replacement,
+        "mandatory safety backup before installation",
     )
 
     install_anchor = '''        progress("Installing Endstone plugin…");
@@ -178,6 +212,8 @@ def main() -> None:
         MARKER,
         '"server_overview"',
         '"logs_startup"',
+        '"backups_create"',
+        "voicecraft-endweave-v2-preinstall",
         "McsvEndweaveSupport.ValidatePreflightAsync",
         "McsvEndweaveSupport.DetectEnvironmentAsync",
         "McsvPythonEnvironmentValidator.ValidateAsync",
@@ -193,10 +229,11 @@ def main() -> None:
     if missing:
         raise RuntimeError(f"MCSV Endweave V2 validation failed: {missing}")
 
+    backup_pos = final.index("voicecraft-endweave-v2-preinstall")
     endweave_pos = final.index("McsvEndweaveInstaller.InstallAsync")
     voicecraft_pos = final.index("await InstallPluginAsync")
-    if endweave_pos >= voicecraft_pos:
-        raise RuntimeError("Endweave must be staged before the VoiceCraft Endstone plugin")
+    if not (backup_pos < endweave_pos < voicecraft_pos):
+        raise RuntimeError("Required order is backup -> Endweave -> VoiceCraft plugin")
 
     verify_pos = final.index("McsvInstallVerifier.VerifyConfigAndActiveWorldAsync")
     restart_pos = final.index('new { action = "restart" }')
