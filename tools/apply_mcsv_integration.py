@@ -71,6 +71,11 @@ def main() -> None:
         _mcsvAction = MakeButton(T("เชื่อม API และติดตั้ง", "CONNECT & INSTALL"), primary: true);
         WireButton(_mcsvAction, ShowMcsvSetup);
         _mcsvCard.AddView(_mcsvAction, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MatchParent, Dp(50)));
+
+        var mcsvGuideButton = MakeButton(T("ดูวิธีเอา API Key", "HOW TO GET API KEY"));
+        WireButton(mcsvGuideButton, ShowMcsvApiKeyGuide);
+        _mcsvCard.AddView(mcsvGuideButton, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MatchParent, Dp(48)) { TopMargin = Dp(8) });
+
         _mcsvCard.Visibility = ViewStates.Gone;
         body.AddView(_mcsvCard, CardLayout());
         return scroll;'''
@@ -115,6 +120,53 @@ def main() -> None:
                 : T("เชื่อม API และติดตั้ง", "CONNECT & INSTALL");
     }
 
+    private void ShowMcsvApiKeyGuide()
+    {
+        var content = new LinearLayout(this) { Orientation = Orientation.Vertical };
+        content.SetPadding(Dp(16), Dp(8), Dp(16), Dp(20));
+
+        content.AddView(Label(
+            T(
+                "ทำตามภาพหรือขั้นตอนด้านล่างเพื่อสร้าง MCSV API Key สำหรับ VoiceCraft",
+                "Follow the image or the steps below to create an MCSV API key for VoiceCraft."),
+            12,
+            Ink));
+
+        var guideImage = new ImageView(this);
+        guideImage.SetImageResource(Resource.Drawable.mcsv_api_key_guide);
+        guideImage.SetAdjustViewBounds(true);
+        guideImage.SetScaleType(ImageView.ScaleType.FitCenter);
+        guideImage.ContentDescription = T("ภาพวิธีเอา MCSV API Key", "MCSV API key guide image");
+        content.AddView(guideImage, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MatchParent, ViewGroup.LayoutParams.WrapContent) { TopMargin = Dp(12) });
+
+        content.AddView(Label(
+            T(
+                "1. เข้าเว็บไซต์ MCSV แล้วเปิดเมนู API / MCP จากแถบด้านซ้าย จากนั้นกด “สร้าง key”\n\n" +
+                "2. ตั้งชื่อ Key เช่น VoiceCraft แล้วเลือก “สิทธิ์เต็ม” จากนั้นกด “สร้าง key”\n\n" +
+                "3. เมื่อระบบสร้าง Key แล้ว ให้กด Copy เพื่อคัดลอก token ที่ขึ้นต้นด้วย mcsv_\n\n" +
+                "4. กลับมาที่ VoiceCraft Server Mobile แล้ววาง token ในช่อง MCSV API Key จากนั้นกดติดตั้ง\n\n" +
+                "คำเตือน: MCSV จะแสดง token ให้เห็นเพียงครั้งเดียว ควรคัดลอกเก็บไว้ทันทีและไม่ส่งให้ผู้อื่น",
+                "1. Open MCSV and choose API / MCP from the left menu, then tap Create key.\n\n" +
+                "2. Name the key, for example VoiceCraft, choose Full access, then create the key.\n\n" +
+                "3. When the key is created, tap Copy to copy the token beginning with mcsv_.\n\n" +
+                "4. Return to VoiceCraft Server Mobile, paste it into MCSV API Key, then install.\n\n" +
+                "Warning: MCSV shows the token only once. Copy and store it immediately and never share it with anyone."),
+            12,
+            Ink),
+            Top(Dp(14)));
+
+        var scroll = new ScrollView(this) { FillViewport = true };
+        scroll.AddView(content);
+
+        var dialog = new AlertDialog.Builder(this)
+            .SetTitle(T("วิธีเอา MCSV API Key", "How to get an MCSV API Key"))
+            .SetView(scroll)
+            .SetPositiveButton(T("ปิด", "CLOSE"), (_, _) => { })
+            .Create();
+        dialog.Show();
+        dialog.Window?.SetLayout(ViewGroup.LayoutParams.MatchParent, ViewGroup.LayoutParams.MatchParent);
+    }
+
     private void ShowMcsvSetup()
     {
         if (_mcsvBusy)
@@ -142,6 +194,10 @@ def main() -> None:
             T("ต้องอนุญาต File read/write, download/decompress/rename/delete และ Power restart", "The key needs file read/write, fetch/decompress/rename/delete and Power restart permissions."),
             10,
             Muted));
+
+        var keyGuideButton = MakeButton(T("ดูวิธีเอา API Key", "HOW TO GET API KEY"));
+        WireButton(keyGuideButton, ShowMcsvApiKeyGuide);
+        panel.AddView(keyGuideButton, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MatchParent, Dp(46)) { TopMargin = Dp(10) });
 
         var builder = new AlertDialog.Builder(this)
             .SetTitle(T("เชื่อม MCSV และติดตั้ง VoiceCraft", "Connect MCSV & Install VoiceCraft"))
@@ -246,6 +302,9 @@ def main() -> None:
     required = [
         "ใช้ MCSV อยู่รึป่าว?",
         "Resource.Drawable.mcsv_logo",
+        "Resource.Drawable.mcsv_api_key_guide",
+        "ดูวิธีเอา API Key",
+        "ShowMcsvApiKeyGuide",
         "RefreshMcsvCardVisibility(ready)",
         "McsvVoiceCraftInstaller.InstallAsync",
         "McsvTokenStore.Save(this, apiKey)",
