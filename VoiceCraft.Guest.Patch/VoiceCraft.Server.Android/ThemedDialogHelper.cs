@@ -63,7 +63,8 @@ internal static class ThemedDialogHelper
         background.SetStroke(System.Math.Max(1, (int)(density + 0.5f)), border);
         dialog.Window?.SetBackgroundDrawable(background);
 
-        if (dialog.FindViewById<TextView>(Android.Resource.Id.Message) is TextView message)
+        var messageId = activity.Resources?.GetIdentifier("message", "id", "android") ?? 0;
+        if (messageId != 0 && dialog.FindViewById<TextView>(messageId) is TextView message)
             message.SetTextColor(ink);
 
         var titleId = activity.Resources?.GetIdentifier("alertTitle", "id", "android") ?? 0;
