@@ -89,7 +89,8 @@ jobs:
           grep -q 'McsvVoiceCraftInstaller.InstallAsync' VoiceCraft.Server.Android/ModernMainActivity.cs
           grep -q 'วิธีสร้าง API Key:' VoiceCraft.Server.Android/ModernMainActivity.cs
           ! grep -q 'ดูวิธีเอา API Key\|HOW TO GET API KEY' VoiceCraft.Server.Android/ModernMainActivity.cs
-          grep -q 'voicecraft.vr.value.' VoiceCraft.Server.Android/EndstoneBridgeController.cs
+          grep -q 'VoiceRangeFadeStartRatio = 0.50f' VoiceCraft.Server.Android/EndstoneBridgeController.cs
+          grep -q 'MathF.Pow(linearFactor, 1.5f)' VoiceCraft.Upstream/VoiceCraft.Network/Audio/Effects/ProximityEffect.cs
           grep -q 'version = "0.2.8"' VoiceCraft.Endstone/pyproject.toml
           grep -q '<ApplicationVersion>18</ApplicationVersion>' VoiceCraft.Server.Android/VoiceCraft.Server.Android.csproj
           grep -q '<ApplicationDisplayVersion>1.7.1-android-phase2-ui5-mcsv-v1</ApplicationDisplayVersion>' VoiceCraft.Server.Android/VoiceCraft.Server.Android.csproj
