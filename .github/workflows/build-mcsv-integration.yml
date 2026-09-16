@@ -7,12 +7,14 @@ on:
     paths:
       - "VoiceCraft.Guest.Patch/VoiceCraft.Server.Android/Mcsv*.cs"
       - "VoiceCraft.Guest.Patch/VoiceCraft.Server.Android/Resources/drawable/mcsv_logo.webp"
+      - "VoiceCraft.Guest.Patch/VoiceCraft.Server.Android/Resources/drawable/mcsv_api_key_guide.webp"
       - "tools/apply_mcsv_integration.py"
       - ".github/workflows/build-mcsv-integration.yml"
   pull_request:
     paths:
       - "VoiceCraft.Guest.Patch/VoiceCraft.Server.Android/Mcsv*.cs"
       - "VoiceCraft.Guest.Patch/VoiceCraft.Server.Android/Resources/drawable/mcsv_logo.webp"
+      - "VoiceCraft.Guest.Patch/VoiceCraft.Server.Android/Resources/drawable/mcsv_api_key_guide.webp"
       - "tools/apply_mcsv_integration.py"
       - ".github/workflows/build-mcsv-integration.yml"
 
@@ -57,20 +59,20 @@ jobs:
           from pathlib import Path
           import re
 
-          display = "1.7.1-android-phase2-ui5-mcsv-v1-test"
+          display = "1.7.1-android-phase2-ui5-mcsv-v1-guide-test"
           csproj = Path("VoiceCraft.Server.Android/VoiceCraft.Server.Android.csproj")
           text = csproj.read_text(encoding="utf-8")
-          text, n1 = re.subn(r"<ApplicationVersion>\d+</ApplicationVersion>", "<ApplicationVersion>15</ApplicationVersion>", text, count=1)
+          text, n1 = re.subn(r"<ApplicationVersion>\d+</ApplicationVersion>", "<ApplicationVersion>16</ApplicationVersion>", text, count=1)
           text, n2 = re.subn(r"<ApplicationDisplayVersion>[^<]+</ApplicationDisplayVersion>", f"<ApplicationDisplayVersion>{display}</ApplicationDisplayVersion>", text, count=1)
           if n1 != 1 or n2 != 1:
-              raise SystemExit("Could not set MCSV test Android identity")
+              raise SystemExit("Could not set MCSV guide test Android identity")
           csproj.write_text(text, encoding="utf-8")
 
           bridge = Path("VoiceCraft.Server.Android/EndstoneBridgeController.cs")
           text = bridge.read_text(encoding="utf-8")
           text, n = re.subn(r'appVersion = "[^"]+"', f'appVersion = "{display}"', text, count=1)
           if n != 1:
-              raise SystemExit("Could not set MCSV test bridge appVersion")
+              raise SystemExit("Could not set MCSV guide test bridge appVersion")
           bridge.write_text(text, encoding="utf-8")
           PY
 
@@ -81,6 +83,7 @@ jobs:
           check() { echo "[guard] $1"; shift; "$@"; }
           check "patch script compiles" python -m compileall -q tools/apply_mcsv_integration.py
           check "MCSV logo" test -s VoiceCraft.Server.Android/Resources/drawable/mcsv_logo.webp
+          check "MCSV API key guide artwork" test -s VoiceCraft.Server.Android/Resources/drawable/mcsv_api_key_guide.webp
           check "token store" test -f VoiceCraft.Server.Android/McsvTokenStore.cs
           check "API client" test -f VoiceCraft.Server.Android/McsvApiClient.cs
           check "installer" test -f VoiceCraft.Server.Android/McsvVoiceCraftInstaller.cs
@@ -97,10 +100,14 @@ jobs:
           check "automatic restart" grep -q 'action = "restart"' VoiceCraft.Server.Android/McsvVoiceCraftInstaller.cs
           check "Thai card title" grep -q 'ใช้ MCSV อยู่รึป่าว?' VoiceCraft.Server.Android/ModernMainActivity.cs
           check "MCSV logo in UI" grep -q 'Resource.Drawable.mcsv_logo' VoiceCraft.Server.Android/ModernMainActivity.cs
+          check "guide artwork in UI" grep -q 'Resource.Drawable.mcsv_api_key_guide' VoiceCraft.Server.Android/ModernMainActivity.cs
+          check "guide action" grep -q 'ShowMcsvApiKeyGuide' VoiceCraft.Server.Android/ModernMainActivity.cs
+          check "Thai guide button" grep -q 'ดูวิธีเอา API Key' VoiceCraft.Server.Android/ModernMainActivity.cs
+          check "one-time token warning" grep -q 'แสดง token ให้เห็นเพียงครั้งเดียว' VoiceCraft.Server.Android/ModernMainActivity.cs
           check "conditional visibility" grep -q 'RefreshMcsvCardVisibility(ready)' VoiceCraft.Server.Android/ModernMainActivity.cs
           check "installer wired to UI" grep -q 'McsvVoiceCraftInstaller.InstallAsync' VoiceCraft.Server.Android/ModernMainActivity.cs
-          check "version code 15" grep -q '<ApplicationVersion>15</ApplicationVersion>' VoiceCraft.Server.Android/VoiceCraft.Server.Android.csproj
-          check "MCSV test display version" grep -q '<ApplicationDisplayVersion>1.7.1-android-phase2-ui5-mcsv-v1-test</ApplicationDisplayVersion>' VoiceCraft.Server.Android/VoiceCraft.Server.Android.csproj
+          check "version code 16" grep -q '<ApplicationVersion>16</ApplicationVersion>' VoiceCraft.Server.Android/VoiceCraft.Server.Android.csproj
+          check "MCSV guide test display version" grep -q '<ApplicationDisplayVersion>1.7.1-android-phase2-ui5-mcsv-v1-guide-test</ApplicationDisplayVersion>' VoiceCraft.Server.Android/VoiceCraft.Server.Android.csproj
 
       - name: Setup .NET 10
         uses: actions/setup-dotnet@v4
@@ -137,12 +144,12 @@ jobs:
           mkdir -p test-assets
           signed=$(find VoiceCraft.Server.Android/bin/Release/net10.0-android/android-arm64/publish -maxdepth 1 -name '*-Signed.apk' -print -quit)
           test -n "$signed"
-          cp "$signed" test-assets/VoiceCraft-Server-Mobile-MCSV-V1-Test-arm64-Signed.apk
-          sha256sum test-assets/VoiceCraft-Server-Mobile-MCSV-V1-Test-arm64-Signed.apk | tee test-assets/SHA256SUMS.txt
+          cp "$signed" test-assets/VoiceCraft-Server-Mobile-MCSV-V1-Guide-Test-arm64-Signed.apk
+          sha256sum test-assets/VoiceCraft-Server-Mobile-MCSV-V1-Guide-Test-arm64-Signed.apk | tee test-assets/SHA256SUMS.txt
 
-      - name: Upload MCSV Integration V1 test APK
+      - name: Upload MCSV Integration V1 guide test APK
         uses: actions/upload-artifact@v4
         with:
-          name: VoiceCraft-MCSV-Integration-V1-Test
+          name: VoiceCraft-MCSV-Integration-V1-Guide-Test
           path: test-assets/*
           if-no-files-found: error
