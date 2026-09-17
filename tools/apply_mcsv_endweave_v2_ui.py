@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 from pathlib import Path
+import subprocess
 import sys
 
 
@@ -77,7 +78,27 @@ def main() -> None:
     if missing:
         raise RuntimeError(f"MCSV Endweave V2 UI validation failed: {missing}")
 
+    logging_patch = repo / "tools" / "apply_mcsv_install_logging.py"
+    if not logging_patch.exists():
+        raise RuntimeError(f"MCSV detailed logging patch is missing: {logging_patch}")
+    subprocess.run(
+        [sys.executable, str(logging_patch), str(repo)],
+        check=True,
+    )
+
+    installer = repo / "VoiceCraft.Server.Android" / "McsvVoiceCraftInstaller.cs"
+    logger = repo / "VoiceCraft.Server.Android" / "McsvInstallLogger.cs"
+    generated_installer = installer.read_text(encoding="utf-8")
+    generated_activity = activity.read_text(encoding="utf-8")
+    if "MCSV_INSTALL_DETAILED_LOGGING" not in generated_installer:
+        raise RuntimeError("MCSV detailed installer logging marker was not generated")
+    if not logger.exists():
+        raise RuntimeError("MCSV install logger was not copied into the Android project")
+    if "MCSV INSTALL, OK, WARN, ERROR" not in generated_activity:
+        raise RuntimeError("Diagnostics UI does not advertise MCSV installer log states")
+
     print(f"Applied MCSV Endweave V2 UI to {activity}")
+    print("Applied detailed MCSV installer logging")
 
 
 if __name__ == "__main__":
