@@ -12,6 +12,7 @@ on:
       - "tools/apply_mcsv_theme_guide_fix.py"
       - "tools/apply_mcsv_endweave_v2.py"
       - "tools/apply_mcsv_endweave_v2_ui.py"
+      - "tools/apply_mcsv_install_logging.py"
       - ".github/workflows/build-mcsv-integration.yml"
   pull_request:
     paths:
@@ -22,6 +23,7 @@ on:
       - "tools/apply_mcsv_theme_guide_fix.py"
       - "tools/apply_mcsv_endweave_v2.py"
       - "tools/apply_mcsv_endweave_v2_ui.py"
+      - "tools/apply_mcsv_install_logging.py"
       - ".github/workflows/build-mcsv-integration.yml"
 
 jobs:
@@ -89,12 +91,13 @@ jobs:
         run: |
           set -euo pipefail
           check() { echo "[guard] $1"; shift; "$@"; }
-          check "V2 patch scripts compile" python -m compileall -q tools/apply_mcsv_integration.py tools/apply_mcsv_theme_guide_fix.py tools/apply_mcsv_endweave_v2.py tools/apply_mcsv_endweave_v2_ui.py
+          check "V2 patch scripts compile" python -m compileall -q tools/apply_mcsv_integration.py tools/apply_mcsv_theme_guide_fix.py tools/apply_mcsv_endweave_v2.py tools/apply_mcsv_endweave_v2_ui.py tools/apply_mcsv_install_logging.py
           check "theme helper copied" test -s VoiceCraft.Server.Android/ThemedDialogHelper.cs
           check "MCSV logo" test -s VoiceCraft.Server.Android/Resources/drawable/mcsv_logo.webp
           check "token store" test -f VoiceCraft.Server.Android/McsvTokenStore.cs
           check "API client" test -f VoiceCraft.Server.Android/McsvApiClient.cs
           check "installer" test -f VoiceCraft.Server.Android/McsvVoiceCraftInstaller.cs
+          check "detailed install logger" test -f VoiceCraft.Server.Android/McsvInstallLogger.cs
           check "Endweave support" test -f VoiceCraft.Server.Android/McsvEndweaveSupport.cs
           check "Endweave catalog" test -f VoiceCraft.Server.Android/McsvEndweaveCatalog.cs
           check "Python metadata validator" test -f VoiceCraft.Server.Android/McsvPythonEnvironmentValidator.cs
@@ -109,6 +112,11 @@ jobs:
           check "Linux Python 3.12 ABI3 wheel" grep -q 'cp312-abi3-manylinux_2_28_x86_64.whl' VoiceCraft.Server.Android/McsvEndweaveCatalog.cs
           check "broken metadata guard" grep -q 'Python package metadata is invalid' VoiceCraft.Server.Android/McsvPythonEnvironmentValidator.cs
           check "V2 installer flow applied" grep -q 'MCSV_ENDWEAVE_V2_FLOW' VoiceCraft.Server.Android/McsvVoiceCraftInstaller.cs
+          check "detailed installer logging applied" grep -q 'MCSV_INSTALL_DETAILED_LOGGING' VoiceCraft.Server.Android/McsvVoiceCraftInstaller.cs
+          check "step logger wired" grep -q 'McsvInstallLogger.Progress(message)' VoiceCraft.Server.Android/McsvVoiceCraftInstaller.cs
+          check "failure logger wired" grep -q 'McsvInstallLogger.Failure(ex)' VoiceCraft.Server.Android/ModernMainActivity.cs
+          check "logger redacts MCSV tokens" grep -q 'mcsv_\[REDACTED\]' VoiceCraft.Server.Android/McsvInstallLogger.cs
+          check "Diagnostics explains install states" grep -q 'MCSV INSTALL, OK, WARN, ERROR' VoiceCraft.Server.Android/ModernMainActivity.cs
           check "required backup" grep -q 'voicecraft-endweave-v2-preinstall' VoiceCraft.Server.Android/McsvVoiceCraftInstaller.cs
           check "server Running required" grep -q 'server_overview' VoiceCraft.Server.Android/McsvVoiceCraftInstaller.cs
           check "startup log permission" grep -q 'logs_startup' VoiceCraft.Server.Android/McsvVoiceCraftInstaller.cs
