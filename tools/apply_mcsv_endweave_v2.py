@@ -68,8 +68,12 @@ def main() -> None:
             progress,
             cancellationToken);
 
-        var endweaveWheel = McsvEndweaveCatalog.SelectWheel(environment);
-        progress("Selected Endweave " + endweaveWheel.PythonTag + " for " + environment.OperatingSystem + "/" + environment.Architecture);
+        progress("Resolving official Endweave release/wheel…");
+        var endweaveWheel = await McsvEndweaveResolver.ResolveAsync(
+            environment,
+            progress,
+            cancellationToken);
+        progress("Resolved Endweave " + endweaveWheel.Version + " / " + endweaveWheel.PythonTag + " for " + environment.OperatingSystem + "/" + environment.Architecture);
 
         var warning = string.Empty;
 '''
@@ -77,7 +81,7 @@ def main() -> None:
         text,
         preflight_anchor,
         preflight_replacement,
-        "runtime preflight and Endweave wheel selection",
+        "runtime preflight and official Endweave resolver",
     )
 
     backup_anchor = '''        var warning = string.Empty;
@@ -217,7 +221,7 @@ def main() -> None:
         "McsvEndweaveSupport.ValidatePreflightAsync",
         "McsvEndweaveSupport.DetectEnvironmentAsync",
         "McsvPythonEnvironmentValidator.ValidateAsync",
-        "McsvEndweaveCatalog.SelectWheel",
+        "McsvEndweaveResolver.ResolveAsync",
         "McsvEndweaveInstaller.InstallAsync",
         "McsvInstallVerifier.VerifyItemMicFilesAsync",
         "McsvInstallVerifier.VerifyConfigAndActiveWorldAsync",
@@ -228,12 +232,15 @@ def main() -> None:
     missing = [value for value in required if value not in final]
     if missing:
         raise RuntimeError(f"MCSV Endweave V2 validation failed: {missing}")
+    if "McsvEndweaveCatalog.SelectWheel(environment)" in final:
+        raise RuntimeError("V3 resolver guard failed: installer still selects Endweave directly from the pinned catalog")
 
     backup_pos = final.index("voicecraft-endweave-v2-preinstall")
+    resolver_pos = final.index("McsvEndweaveResolver.ResolveAsync")
     endweave_pos = final.index("McsvEndweaveInstaller.InstallAsync")
     voicecraft_pos = final.index("await InstallPluginAsync")
-    if not (backup_pos < endweave_pos < voicecraft_pos):
-        raise RuntimeError("Required order is backup -> Endweave -> VoiceCraft plugin")
+    if not (resolver_pos < backup_pos < endweave_pos < voicecraft_pos):
+        raise RuntimeError("Required order is resolver -> backup -> Endweave -> VoiceCraft plugin")
 
     verify_pos = final.index("McsvInstallVerifier.VerifyConfigAndActiveWorldAsync")
     restart_pos = final.index('new { action = "restart" }')
@@ -245,7 +252,7 @@ def main() -> None:
     if wait_pos >= startup_pos:
         raise RuntimeError("Server must be confirmed Running before startup log verification")
 
-    print(f"Applied MCSV Endweave V2 orchestration to {installer}")
+    print(f"Applied MCSV Endweave V3 official resolver orchestration to {installer}")
 
 
 if __name__ == "__main__":
