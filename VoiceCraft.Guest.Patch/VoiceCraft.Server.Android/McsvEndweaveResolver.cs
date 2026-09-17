@@ -11,7 +11,11 @@ internal static class McsvEndweaveResolver
         Action<string>? progress,
         CancellationToken cancellationToken)
     {
+        progress?.Invoke(
+            $"Resolver environment — Endstone {environment.EndstoneRuntimeVersion}, Python {environment.PythonVersion.Major}.{environment.PythonVersion.Minor}, {environment.OperatingSystem}/{environment.Architecture}");
+
         Exception? discoveryFailure = null;
+        var officialFailures = new List<string>();
         try
         {
             var releases = await McsvEndweaveReleaseClient.GetStableReleasesAsync(
@@ -28,28 +32,46 @@ internal static class McsvEndweaveResolver
                         out var reason) ||
                     candidate == null)
                 {
-                    progress?.Invoke($"Endweave {release.Version} skipped — {reason}");
+                    progress?.Invoke($"COMPAT SKIP — Endweave {release.Version}: {reason}");
                     continue;
                 }
 
                 if (!TryParseSha256(candidate.Asset.Digest, out var expectedSha))
                 {
-                    progress?.Invoke(
-                        $"WARN — Endweave {release.Version} asset has no valid GitHub SHA-256 digest; skipping release");
+                    var failure = $"Endweave {release.Version}: official asset has no valid GitHub SHA-256 digest";
+                    officialFailures.Add(failure);
+                    progress?.Invoke($"WARN — DIGEST INVALID — {failure}; trying older official release");
                     continue;
                 }
 
                 progress?.Invoke(
-                    $"Endweave {release.Version} is compatible: Endstone '{candidate.EndstoneRequirement}', Python '{candidate.PythonRequirement}'");
-                await VerifyOfficialAssetAsync(
-                    candidate.Asset.DownloadUrl,
-                    candidate.Asset.Size,
-                    expectedSha,
-                    progress,
-                    cancellationToken);
+                    $"COMPAT PASS — Endweave {release.Version}: wheel {candidate.Asset.Name}, Endstone '{candidate.EndstoneRequirement}', Python '{candidate.PythonRequirement}'");
+
+                try
+                {
+                    await VerifyOfficialAssetAsync(
+                        candidate.Asset.DownloadUrl,
+                        candidate.Asset.Size,
+                        expectedSha,
+                        release.Version.ToString(),
+                        progress,
+                        cancellationToken);
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or McsvApiException)
+                {
+                    var failure = $"Endweave {release.Version}: {SafeMessage(ex)}";
+                    officialFailures.Add(failure);
+                    progress?.Invoke(
+                        $"WARN — official Endweave {release.Version} rejected — {SafeMessage(ex)}; trying older official release");
+                    continue;
+                }
 
                 progress?.Invoke(
-                    $"Selected official Endweave {release.Version} ({candidate.PythonTag}); SHA-256 verified");
+                    $"Selected official Endweave {release.Version} ({candidate.PythonTag}) after compatibility + digest verification");
                 return new McsvEndweaveWheel(
                     release.Version.ToString(),
                     candidate.Asset.Name,
@@ -59,6 +81,9 @@ internal static class McsvEndweaveResolver
                     environment.Architecture,
                     candidate.PythonTag);
             }
+
+            progress?.Invoke(
+                "WARN — no verified compatible official Endweave release remained; checking last-known-good fallback");
         }
         catch (OperationCanceledException)
         {
@@ -68,7 +93,7 @@ internal static class McsvEndweaveResolver
         {
             discoveryFailure = ex;
             progress?.Invoke(
-                "WARN — dynamic Endweave release resolution failed; checking last-known-good fallback");
+                $"WARN — dynamic Endweave release discovery failed — {SafeMessage(ex)}; checking last-known-good fallback");
         }
 
         McsvEndweaveWheel fallback;
@@ -79,22 +104,44 @@ internal static class McsvEndweaveResolver
         catch (Exception fallbackError)
         {
             var detail = discoveryFailure == null
-                ? "No compatible official Endweave release was found."
+                ? "No compatible verified official Endweave release was found."
                 : "Dynamic lookup failed: " + SafeMessage(discoveryFailure) + ".";
+            if (officialFailures.Count > 0)
+                detail += " Official candidates rejected: " + string.Join(" | ", officialFailures.Take(3)) + ".";
             throw new McsvApiException(
                 detail + " Last-known-good fallback is also incompatible: " + SafeMessage(fallbackError));
         }
 
+        var fallbackReason = discoveryFailure != null
+            ? "official release discovery unavailable"
+            : officialFailures.Count > 0
+                ? "official candidates failed verification"
+                : "no official candidate matched runtime compatibility";
         progress?.Invoke(
-            $"WARN — using last-known-good Endweave {fallback.Version} after compatibility checks");
-        await VerifyOfficialAssetAsync(
-            fallback.DownloadUrl,
-            0,
-            fallback.Sha256,
-            progress,
-            cancellationToken);
+            $"WARN — FALLBACK — using last-known-good Endweave {fallback.Version} because {fallbackReason}");
+
+        try
+        {
+            await VerifyOfficialAssetAsync(
+                fallback.DownloadUrl,
+                0,
+                fallback.Sha256,
+                fallback.Version + " fallback",
+                progress,
+                cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or McsvApiException)
+        {
+            throw new McsvApiException(
+                $"Last-known-good Endweave {fallback.Version} failed mandatory digest verification: {SafeMessage(ex)}");
+        }
+
         progress?.Invoke(
-            $"Fallback Endweave {fallback.Version} SHA-256 verified");
+            $"FALLBACK PASS — Endweave {fallback.Version} SHA-256 verified");
         return fallback;
     }
 
@@ -102,6 +149,7 @@ internal static class McsvEndweaveResolver
         string downloadUrl,
         long expectedSize,
         string expectedSha256,
+        string versionLabel,
         Action<string>? progress,
         CancellationToken cancellationToken)
     {
@@ -115,12 +163,13 @@ internal static class McsvEndweaveResolver
 
         if (expectedSize < 0 || expectedSize > MaxWheelBytes)
             throw new McsvApiException(
-                $"Endweave wheel size is outside the allowed range: {expectedSize} bytes.");
+                $"SIZE INVALID — Endweave wheel size is outside the allowed range: {expectedSize} bytes.");
 
         if (!IsSha256(expectedSha256))
-            throw new McsvApiException("Endweave SHA-256 digest is invalid.");
+            throw new McsvApiException("DIGEST INVALID — Endweave SHA-256 digest is invalid.");
 
-        progress?.Invoke("Verifying official Endweave wheel SHA-256…");
+        progress?.Invoke(
+            $"DIGEST CHECK — Endweave {versionLabel}: SHA-256 {expectedSha256[..12]}…");
         using var handler = new HttpClientHandler
         {
             AllowAutoRedirect = true,
@@ -138,14 +187,14 @@ internal static class McsvEndweaveResolver
             cancellationToken);
         if (!response.IsSuccessStatusCode)
             throw new McsvApiException(
-                $"Could not verify Endweave wheel: HTTP {(int)response.StatusCode}.");
+                $"DOWNLOAD FAIL — Endweave wheel returned HTTP {(int)response.StatusCode}.");
 
         var contentLength = response.Content.Headers.ContentLength;
         if (contentLength.HasValue && contentLength.Value > MaxWheelBytes)
-            throw new McsvApiException("Endweave wheel exceeds the 50 MiB verification limit.");
+            throw new McsvApiException("SIZE INVALID — Endweave wheel exceeds the 50 MiB verification limit.");
         if (expectedSize > 0 && contentLength.HasValue && contentLength.Value != expectedSize)
             throw new McsvApiException(
-                $"Endweave wheel size changed: GitHub API reported {expectedSize}, download returned {contentLength.Value} bytes.");
+                $"SIZE MISMATCH — GitHub API reported {expectedSize}, download returned {contentLength.Value} bytes.");
 
         await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
         using var sha = SHA256.Create();
@@ -156,19 +205,22 @@ internal static class McsvEndweaveResolver
         {
             total += read;
             if (total > MaxWheelBytes)
-                throw new McsvApiException("Endweave wheel exceeds the 50 MiB verification limit.");
+                throw new McsvApiException("SIZE INVALID — Endweave wheel exceeds the 50 MiB verification limit.");
             sha.TransformBlock(buffer, 0, read, null, 0);
         }
         sha.TransformFinalBlock(Array.Empty<byte>(), 0, 0);
 
         if (expectedSize > 0 && total != expectedSize)
             throw new McsvApiException(
-                $"Endweave wheel size changed while downloading: expected {expectedSize}, got {total} bytes.");
+                $"SIZE MISMATCH — expected {expectedSize}, downloaded {total} bytes.");
 
         var actual = Convert.ToHexString(sha.Hash ?? Array.Empty<byte>()).ToLowerInvariant();
         if (!actual.Equals(expectedSha256, StringComparison.OrdinalIgnoreCase))
             throw new McsvApiException(
-                $"Endweave SHA-256 verification failed. Expected {expectedSha256}, got {actual}.");
+                $"DIGEST FAIL — expected {expectedSha256}, got {actual}.");
+
+        progress?.Invoke(
+            $"DIGEST PASS — Endweave {versionLabel}: SHA-256 verified ({total} bytes)");
     }
 
     private static bool TryParseSha256(string digest, out string sha256)
