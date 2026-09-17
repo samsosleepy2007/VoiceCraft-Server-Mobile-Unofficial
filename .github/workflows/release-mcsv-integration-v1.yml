@@ -34,7 +34,7 @@ jobs:
           submodules: recursive
           fetch-depth: 0
 
-      - name: Verify release is built from main
+      - name: Verify release source and canonical manifest
         shell: bash
         run: |
           set -euo pipefail
@@ -43,6 +43,13 @@ jobs:
           test -f LICENSE.md
           test -f NOTICE.md
           cmp -s LICENSE.md VoiceCraft.Upstream/LICENSE.md
+          test "$(jq -r '.tag' release-manifest.json)" = "$TAG"
+          test "$(jq -r '.android.display_version' release-manifest.json)" = "$APP_DISPLAY_VERSION"
+          test "$(jq -r '.android.version_code' release-manifest.json)" = "$APP_VERSION_CODE"
+          test "$(jq -r '.endstone' release-manifest.json)" = "0.2.8"
+          test "$(jq -r '.item_mic' release-manifest.json)" = "2.4.0"
+          test "$(jq -r '.relay' release-manifest.json)" = "0.2.1"
+          test "$(jq -r '.protocol' release-manifest.json)" = "1"
 
       - name: Apply production runtime patches and V3.0.1 release-channel hotfix
         shell: bash
@@ -70,7 +77,6 @@ jobs:
           python - <<'PY'
           from pathlib import Path
           import os, re
-
           display = os.environ["APP_DISPLAY_VERSION"]
           code = os.environ["APP_VERSION_CODE"]
           csproj = Path("VoiceCraft.Server.Android/VoiceCraft.Server.Android.csproj")
@@ -80,7 +86,6 @@ jobs:
           if n1 != 1 or n2 != 1:
               raise SystemExit("Could not set MCSV V3.0.1 Android identity")
           csproj.write_text(text, encoding="utf-8")
-
           bridge = Path("VoiceCraft.Server.Android/EndstoneBridgeController.cs")
           text = bridge.read_text(encoding="utf-8")
           text, n = re.subn(r'appVersion = "[^"]+"', f'appVersion = "{display}"', text, count=1)
@@ -245,15 +250,7 @@ jobs:
           set -euo pipefail
           (
             cd release-assets
-            sha256sum \
-              "$APK_NAME" \
-              "$PLUGIN_NAME" \
-              "$ADDON_NAME" \
-              "$ENDWEAVE_NAME" \
-              GPL-3.0.txt \
-              NOTICE.md \
-              "$SOURCE_ARCHIVE" \
-              > SHA256SUMS.txt
+            sha256sum "$APK_NAME" "$PLUGIN_NAME" "$ADDON_NAME" "$ENDWEAVE_NAME" GPL-3.0.txt NOTICE.md "$SOURCE_ARCHIVE" > SHA256SUMS.txt
             sha256sum -c SHA256SUMS.txt
           )
           cat > release-notes.md <<'EOF'
@@ -262,31 +259,29 @@ jobs:
           V3.0.1 is the post-release audit hotfix. It keeps the V3 official Endweave resolver and fixes release-channel references that could break MCSV automatic installation after old releases were cleaned up.
 
           ### Critical hotfixes
-          - MCSV automatic VoiceCraft plugin download now uses the repository's **latest release channel** instead of a deleted historical tag.
-          - Item Mic 2.4.0 automatic download now uses the same latest release channel.
+          - MCSV automatic VoiceCraft plugin and Item Mic downloads now use the repository's **latest release channel** instead of deleted historical tags.
           - The in-app configured Plugin downloader is upgraded from Endstone VoiceCraft **0.2.6** to **0.2.8** and verifies the canonical 0.2.8 SHA-256 before injecting config.
-          - Main Android production identity is aligned with this release at **version code 21**.
-          - Release cleanup now audits and removes orphaned historical Git tags, not only GitHub Release objects.
+          - Main Android production identity is aligned at **version code 21**.
+          - Release cleanup audits/removes orphaned historical Git tags, not only GitHub Release objects.
           - Legacy release workflows/manifests are retired so old package releases cannot be recreated accidentally.
 
           ### Included files
-          - **VoiceCraft Android APK** — `VoiceCraft-Server-Mobile-MCSV-V3.0.1-Endweave-arm64-Signed.apk`
-          - **VoiceCraft Endstone Plugin 0.2.8** — `endstone_voicecraft-0.2.8-py3-none-any.whl`
-          - **VoiceCraft Item Mic Addon 2.4.0** — `VoiceCraft_ItemMic_v2.4.0.mcaddon`
-          - **Endweave 0.5.1 Linux x86_64 manual wheel** — `endstone_endweave-0.5.1-cp312-abi3-manylinux_2_28_x86_64.whl`
-          - **GPL license** — `GPL-3.0.txt`
-          - **Attribution / notices** — `NOTICE.md`
-          - **Corresponding Source** — `VoiceCraft-Server-Mobile-...-Corresponding-Source.zip`
-          - **SHA-256 checksums** — `SHA256SUMS.txt`
+          - `VoiceCraft-Server-Mobile-MCSV-V3.0.1-Endweave-arm64-Signed.apk`
+          - `endstone_voicecraft-0.2.8-py3-none-any.whl`
+          - `VoiceCraft_ItemMic_v2.4.0.mcaddon`
+          - `endstone_endweave-0.5.1-cp312-abi3-manylinux_2_28_x86_64.whl`
+          - `GPL-3.0.txt`
+          - `NOTICE.md`
+          - Corresponding Source ZIP
+          - `SHA256SUMS.txt`
 
           ### MCSV V3 resolver retained
-          - Queries stable official `EndstoneMC/endweave` GitHub Releases.
-          - Checks Python, Endstone dependency, OS, CPU, CPython and ABI/ABI3 compatibility.
-          - Requires official GitHub SHA-256 digests for dynamic candidates.
-          - Verifies downloaded bytes, digest, size and the 50 MiB ceiling before installation.
-          - Falls through failed newest candidates to older compatible official releases.
-          - Uses a verified last-known-good fallback only after official candidates are exhausted.
-          - Requires backup, server restart, Running state and Endweave + VoiceCraft startup-log verification before Ready.
+          - Official stable `EndstoneMC/endweave` GitHub Releases are the primary source.
+          - Python, Endstone dependency, OS, CPU, CPython and ABI/ABI3 compatibility are checked.
+          - Dynamic candidates require and verify official GitHub SHA-256 digests.
+          - Download size, bytes and the 50 MiB safety ceiling are verified.
+          - Failed newest candidates fall through to older compatible official releases, then verified last-known-good fallback.
+          - Required backup, restart, Running state and Endweave + VoiceCraft startup verification gate Ready.
 
           ### Production versions
           - VoiceCraft upstream: **v1.7.1** (`85aaccccbb58adb23e8c87144e8b1c24bf4b2011`)
@@ -315,11 +310,25 @@ jobs:
             "release-assets/SHA256SUMS.txt"
           )
           if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release edit "$TAG" --target "$GITHUB_SHA" --title "$RELEASE_NAME" --notes-file release-notes.md --latest
+            release_id=$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${TAG}" --jq '.id')
+            jq -n \
+              --arg name "$RELEASE_NAME" \
+              --arg target "$GITHUB_SHA" \
+              --rawfile body release-notes.md \
+              '{name:$name,target_commitish:$target,body:$body,draft:false,prerelease:false}' |
+              gh api --method PATCH "repos/${GITHUB_REPOSITORY}/releases/${release_id}" --input - >/dev/null
             gh release upload "$TAG" "${assets[@]}" --clobber
           else
-            gh release create "$TAG" "${assets[@]}" --target "$GITHUB_SHA" --title "$RELEASE_NAME" --notes-file release-notes.md --latest
+            gh release create "$TAG" "${assets[@]}" \
+              --target "$GITHUB_SHA" \
+              --title "$RELEASE_NAME" \
+              --notes-file release-notes.md
+            release_id=$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${TAG}" --jq '.id')
           fi
+          jq -n '{make_latest:"true"}' |
+            gh api --method PATCH "repos/${GITHUB_REPOSITORY}/releases/${release_id}" --input - >/dev/null
+          latest_tag=$(gh api "repos/${GITHUB_REPOSITORY}/releases/latest" --jq '.tag_name')
+          test "$latest_tag" = "$TAG"
 
       - name: Verify new release contains complete package
         shell: bash
@@ -387,6 +396,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+          latest_tag=$(gh api "repos/${GITHUB_REPOSITORY}/releases/latest" --jq '.tag_name')
+          test "$latest_tag" = "$TAG"
 
           release_tags=$(gh release list --limit 100 --json tagName --jq '.[].tagName')
           test "$(grep -c . <<<"$release_tags")" -eq 1
