@@ -1,10 +1,11 @@
-name: Release MCSV Endweave V3
+name: Release MCSV Endweave V3.0.1
 
 on:
   push:
     branches: [main]
     paths:
       - ".github/workflows/release-mcsv-integration-v1.yml"
+      - "tools/apply_release_channel_v3_hotfix.py"
   workflow_dispatch:
 
 permissions:
@@ -15,11 +16,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 75
     env:
-      TAG: v1.7.1-android-phase2-ui5-mcsv-v3-endweave-resolver-endstone0.2.8-relay0.2.1-itemmic2.4.0
-      RELEASE_NAME: VoiceCraft Server Mobile MCSV Endweave V3
-      APP_DISPLAY_VERSION: 1.7.1-android-phase2-ui5-mcsv-v3-endweave
-      APP_VERSION_CODE: "20"
-      APK_NAME: VoiceCraft-Server-Mobile-MCSV-V3-Endweave-arm64-Signed.apk
+      TAG: v1.7.1-android-phase2-ui5-mcsv-v3.0.1-endweave-resolver-endstone0.2.8-relay0.2.1-itemmic2.4.0
+      RELEASE_NAME: VoiceCraft Server Mobile MCSV Endweave V3.0.1
+      APP_DISPLAY_VERSION: 1.7.1-android-phase2-ui5-mcsv-v3.0.1-endweave
+      APP_VERSION_CODE: "21"
+      APK_NAME: VoiceCraft-Server-Mobile-MCSV-V3.0.1-Endweave-arm64-Signed.apk
       PLUGIN_NAME: endstone_voicecraft-0.2.8-py3-none-any.whl
       ADDON_NAME: VoiceCraft_ItemMic_v2.4.0.mcaddon
       ENDWEAVE_NAME: endstone_endweave-0.5.1-cp312-abi3-manylinux_2_28_x86_64.whl
@@ -43,7 +44,7 @@ jobs:
           test -f NOTICE.md
           cmp -s LICENSE.md VoiceCraft.Upstream/LICENSE.md
 
-      - name: Apply production runtime patches and MCSV V3 resolver
+      - name: Apply production runtime patches and V3.0.1 release-channel hotfix
         shell: bash
         run: |
           set -euo pipefail
@@ -60,8 +61,9 @@ jobs:
           python tools/apply_mcsv_theme_guide_fix.py .
           python tools/apply_mcsv_endweave_v2.py .
           python tools/apply_mcsv_endweave_v2_ui.py .
+          python tools/apply_release_channel_v3_hotfix.py .
 
-      - name: Set MCSV V3 production Android identity
+      - name: Set MCSV V3.0.1 production Android identity
         shell: bash
         run: |
           set -euo pipefail
@@ -76,39 +78,49 @@ jobs:
           text, n1 = re.subn(r"<ApplicationVersion>\d+</ApplicationVersion>", f"<ApplicationVersion>{code}</ApplicationVersion>", text, count=1)
           text, n2 = re.subn(r"<ApplicationDisplayVersion>[^<]+</ApplicationDisplayVersion>", f"<ApplicationDisplayVersion>{display}</ApplicationDisplayVersion>", text, count=1)
           if n1 != 1 or n2 != 1:
-              raise SystemExit("Could not set MCSV V3 Android identity")
+              raise SystemExit("Could not set MCSV V3.0.1 Android identity")
           csproj.write_text(text, encoding="utf-8")
 
           bridge = Path("VoiceCraft.Server.Android/EndstoneBridgeController.cs")
           text = bridge.read_text(encoding="utf-8")
           text, n = re.subn(r'appVersion = "[^"]+"', f'appVersion = "{display}"', text, count=1)
           if n != 1:
-              raise SystemExit("Could not set MCSV V3 bridge appVersion")
+              raise SystemExit("Could not set MCSV V3.0.1 bridge appVersion")
           bridge.write_text(text, encoding="utf-8")
           PY
 
-      - name: Validate MCSV V3 release guards
+      - name: Validate MCSV V3.0.1 release guards
         shell: bash
         run: |
           set -euo pipefail
+          python -m compileall -q tools/apply_mcsv_endweave_v2.py tools/apply_mcsv_endweave_v2_ui.py tools/apply_release_channel_v3_hotfix.py
           test -f VoiceCraft.Server.Android/McsvEndweaveReleaseClient.cs
           test -f VoiceCraft.Server.Android/McsvEndweaveCompatibility.cs
           test -f VoiceCraft.Server.Android/McsvEndweaveResolver.cs
-          grep -q 'https://api.github.com/repos/EndstoneMC/endweave/releases' VoiceCraft.Server.Android/McsvEndweaveReleaseClient.cs
-          grep -q '/EndstoneMC/endweave/releases/download/' VoiceCraft.Server.Android/McsvEndweaveResolver.cs
-          grep -q 'DIGEST PASS' VoiceCraft.Server.Android/McsvEndweaveResolver.cs
-          grep -q 'DIGEST FAIL' VoiceCraft.Server.Android/McsvEndweaveResolver.cs
-          grep -q 'trying older official release' VoiceCraft.Server.Android/McsvEndweaveResolver.cs
-          grep -q 'last-known-good' VoiceCraft.Server.Android/McsvEndweaveResolver.cs
-          grep -q '50L \* 1024L \* 1024L' VoiceCraft.Server.Android/McsvEndweaveResolver.cs
-          grep -q 'McsvEndweaveResolver.ResolveAsync' VoiceCraft.Server.Android/McsvVoiceCraftInstaller.cs
-          grep -q 'voicecraft-endweave-v2-preinstall' VoiceCraft.Server.Android/McsvVoiceCraftInstaller.cs
-          grep -q 'McsvInstallVerifier.VerifyItemMicFilesAsync' VoiceCraft.Server.Android/McsvVoiceCraftInstaller.cs
-          grep -q 'McsvStartupVerifier.VerifyAsync' VoiceCraft.Server.Android/McsvVoiceCraftInstaller.cs
-          grep -q 'Ready — Endweave + VoiceCraft online' VoiceCraft.Server.Android/McsvVoiceCraftInstaller.cs
+          grep -Fq 'https://api.github.com/repos/EndstoneMC/endweave/releases' VoiceCraft.Server.Android/McsvEndweaveReleaseClient.cs
+          grep -Fq '/EndstoneMC/endweave/releases/download/' VoiceCraft.Server.Android/McsvEndweaveResolver.cs
+          grep -Fq 'DIGEST PASS' VoiceCraft.Server.Android/McsvEndweaveResolver.cs
+          grep -Fq 'DIGEST FAIL' VoiceCraft.Server.Android/McsvEndweaveResolver.cs
+          grep -Fq 'trying older official release' VoiceCraft.Server.Android/McsvEndweaveResolver.cs
+          grep -Fq 'last-known-good' VoiceCraft.Server.Android/McsvEndweaveResolver.cs
+          grep -Fq '50L * 1024L * 1024L' VoiceCraft.Server.Android/McsvEndweaveResolver.cs
+          grep -Fq 'McsvEndweaveResolver.ResolveAsync' VoiceCraft.Server.Android/McsvVoiceCraftInstaller.cs
+          grep -Fq 'voicecraft-endweave-v2-preinstall' VoiceCraft.Server.Android/McsvVoiceCraftInstaller.cs
+          grep -Fq 'McsvInstallVerifier.VerifyItemMicFilesAsync' VoiceCraft.Server.Android/McsvVoiceCraftInstaller.cs
+          grep -Fq 'McsvStartupVerifier.VerifyAsync' VoiceCraft.Server.Android/McsvVoiceCraftInstaller.cs
+          grep -Fq 'Ready — Endweave + VoiceCraft online' VoiceCraft.Server.Android/McsvVoiceCraftInstaller.cs
+          grep -Fq 'releases/latest/download/' VoiceCraft.Server.Android/McsvVoiceCraftInstaller.cs
+          grep -Fq 'releases/latest/download/' VoiceCraft.Server.Android/ConfiguredPluginDownloadInjector.cs
+          grep -Fq 'endstone_voicecraft-0.2.8-py3-none-any.whl' VoiceCraft.Server.Android/ConfiguredPluginDownloadInjector.cs
+          grep -Fq 'b6ac91c8e02441edb2476af3c473f58baf70fd99189c702342389931997840ea' VoiceCraft.Server.Android/ConfiguredPluginDownloadInjector.cs
+          ! grep -R -Fq 'v1.7.1-itemmic2.4.0-hidden-single' VoiceCraft.Server.Android
+          ! grep -R -Fq 'v1.7.1-android-phase2-ui5-voice-range-strongfade50-endstone0.2.8-relay0.2.1-itemmic2.3.0' VoiceCraft.Server.Android
+          ! grep -R -Fq 'v1.7.1-android-phase2-ui4.5.2-account-v2-guest-endstone0.2.6-relay0.2.1' VoiceCraft.Server.Android
           grep -q 'version = "0.2.8"' VoiceCraft.Endstone/pyproject.toml
-          grep -q '<ApplicationVersion>20</ApplicationVersion>' VoiceCraft.Server.Android/VoiceCraft.Server.Android.csproj
-          grep -q '<ApplicationDisplayVersion>1.7.1-android-phase2-ui5-mcsv-v3-endweave</ApplicationDisplayVersion>' VoiceCraft.Server.Android/VoiceCraft.Server.Android.csproj
+          grep -q '<ApplicationVersion>21</ApplicationVersion>' VoiceCraft.Server.Android/VoiceCraft.Server.Android.csproj
+          grep -q '<ApplicationDisplayVersion>1.7.1-android-phase2-ui5-mcsv-v3.0.1-endweave</ApplicationDisplayVersion>' VoiceCraft.Server.Android/VoiceCraft.Server.Android.csproj
+          grep -q 'GPL-3.0' VoiceCraft.Server.Android/ModernMainActivity.cs
+          grep -q 'https://github.com/AvionBlock/VoiceCraft' VoiceCraft.Server.Android/ModernMainActivity.cs
 
       - name: Setup .NET 10
         uses: actions/setup-dotnet@v4
@@ -192,61 +204,98 @@ jobs:
             -o "release-assets/$ENDWEAVE_NAME"
           echo "$EXPECTED_ENDWEAVE_SHA256  release-assets/$ENDWEAVE_NAME" | sha256sum -c -
 
+      - name: Build GPL and corresponding-source assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp VoiceCraft.Upstream/LICENSE.md release-assets/GPL-3.0.txt
+          cp NOTICE.md release-assets/NOTICE.md
+          source_name="VoiceCraft-Server-Mobile-${TAG}-Corresponding-Source"
+          mkdir -p "release-source/${source_name}"
+          rsync -a \
+            --exclude='.git' \
+            --exclude='release-assets' \
+            --exclude='release-source' \
+            ./ "release-source/${source_name}/"
+          find "release-source/${source_name}" -depth -type d \
+            \( -name bin -o -name obj -o -name node_modules -o -name dist -o -name __pycache__ \) \
+            -exec rm -rf {} +
+          find "release-source/${source_name}" -name '.git' -delete
+          find "release-source/${source_name}" -name '*.pyc' -delete
+          cat > "release-source/${source_name}/SOURCE_INFO.txt" <<EOF
+          VoiceCraft Server Mobile Corresponding Source
+          Release tag: ${TAG}
+          Release commit: ${GITHUB_SHA}
+          Android: ${APP_DISPLAY_VERSION} (version code ${APP_VERSION_CODE})
+          VoiceCraft Endstone plugin: 0.2.8
+          Item Mic addon: 2.4.0
+          Endweave manual wheel: 0.5.1 Linux x86_64 cp312-abi3
+          Relay: 0.2.1 / protocol 1
+          VoiceCraft upstream: v1.7.1
+          Upstream commit: 85aaccccbb58adb23e8c87144e8b1c24bf4b2011
+          Upstream: https://github.com/AvionBlock/VoiceCraft
+          EOF
+          (cd release-source && zip -qr "../release-assets/${source_name}.zip" "${source_name}")
+          test -s "release-assets/${source_name}.zip"
+          echo "SOURCE_ARCHIVE=${source_name}.zip" >> "$GITHUB_ENV"
+
       - name: Generate release checksums and notes
         shell: bash
         run: |
           set -euo pipefail
           (
             cd release-assets
-            sha256sum "$APK_NAME" "$PLUGIN_NAME" "$ADDON_NAME" "$ENDWEAVE_NAME" > SHA256SUMS.txt
+            sha256sum \
+              "$APK_NAME" \
+              "$PLUGIN_NAME" \
+              "$ADDON_NAME" \
+              "$ENDWEAVE_NAME" \
+              GPL-3.0.txt \
+              NOTICE.md \
+              "$SOURCE_ARCHIVE" \
+              > SHA256SUMS.txt
+            sha256sum -c SHA256SUMS.txt
           )
           cat > release-notes.md <<'EOF'
-          ## VoiceCraft Server Mobile — MCSV Endweave V3
+          ## VoiceCraft Server Mobile — MCSV Endweave V3.0.1
 
-          This release promotes the latest tested MCSV/Endweave resolver work to `main` and publishes a self-contained VoiceCraft server package.
+          V3.0.1 is the post-release audit hotfix. It keeps the V3 official Endweave resolver and fixes release-channel references that could break MCSV automatic installation after old releases were cleaned up.
+
+          ### Critical hotfixes
+          - MCSV automatic VoiceCraft plugin download now uses the repository's **latest release channel** instead of a deleted historical tag.
+          - Item Mic 2.4.0 automatic download now uses the same latest release channel.
+          - The in-app configured Plugin downloader is upgraded from Endstone VoiceCraft **0.2.6** to **0.2.8** and verifies the canonical 0.2.8 SHA-256 before injecting config.
+          - Main Android production identity is aligned with this release at **version code 21**.
+          - Release cleanup now audits and removes orphaned historical Git tags, not only GitHub Release objects.
+          - Legacy release workflows/manifests are retired so old package releases cannot be recreated accidentally.
 
           ### Included files
-          - **VoiceCraft Android APK** — `VoiceCraft-Server-Mobile-MCSV-V3-Endweave-arm64-Signed.apk`
+          - **VoiceCraft Android APK** — `VoiceCraft-Server-Mobile-MCSV-V3.0.1-Endweave-arm64-Signed.apk`
           - **VoiceCraft Endstone Plugin 0.2.8** — `endstone_voicecraft-0.2.8-py3-none-any.whl`
           - **VoiceCraft Item Mic Addon 2.4.0** — `VoiceCraft_ItemMic_v2.4.0.mcaddon`
           - **Endweave 0.5.1 Linux x86_64 manual wheel** — `endstone_endweave-0.5.1-cp312-abi3-manylinux_2_28_x86_64.whl`
+          - **GPL license** — `GPL-3.0.txt`
+          - **Attribution / notices** — `NOTICE.md`
+          - **Corresponding Source** — `VoiceCraft-Server-Mobile-...-Corresponding-Source.zip`
           - **SHA-256 checksums** — `SHA256SUMS.txt`
 
-          ### MCSV V3 resolver hardening
-          - Queries stable releases from the official `EndstoneMC/endweave` GitHub Releases API.
-          - Automatically evaluates `requires-python`, Endstone dependency compatibility, OS, CPU, CPython and ABI/ABI3 wheel tags.
-          - Accepts only HTTPS assets from the official EndstoneMC Endweave release path.
-          - Requires and validates the GitHub SHA-256 digest for dynamic official candidates.
-          - Streams downloaded wheel bytes and independently verifies SHA-256, Content-Length, byte count and a 50 MiB safety ceiling before installation.
-          - If the newest compatible official release fails integrity/download validation, the resolver tries older compatible official stable releases.
-          - Uses the verified last-known-good catalog only after official candidates are exhausted or unavailable.
-          - A fallback wheel is SHA-256 verified again before it can be installed.
-
-          ### Detailed runtime logs
-          - Resolver/install stages are classified as `STEP`, `OK`, `WARN`, `ERROR` and `READY`.
-          - Integrity events include `DIGEST PASS`, `DIGEST FAIL`, incompatible-release skip reasons, older-official fallback and last-known-good fallback.
-          - Known SHA/digest/size failures produce a targeted help hint.
-          - MCSV tokens, Bearer credentials and secret/token assignments are redacted from runtime logs.
-
-          ### Safe MCSV installation flow
-          - Detect Endstone runtime / OS / Python / CPU.
-          - Validate Python package metadata before modification.
-          - Require a pre-install safety backup.
-          - Resolve and verify Endweave before install.
-          - Install VoiceCraft Endstone plugin 0.2.8.
-          - Install and verify Item Mic 2.4.0 BP/RP plus active-world pack JSON.
-          - Write and verify VoiceCraft relay / Voice Range configuration.
-          - Restart the server, wait for `Running`, then verify startup logs for Endweave + VoiceCraft before showing Ready.
+          ### MCSV V3 resolver retained
+          - Queries stable official `EndstoneMC/endweave` GitHub Releases.
+          - Checks Python, Endstone dependency, OS, CPU, CPython and ABI/ABI3 compatibility.
+          - Requires official GitHub SHA-256 digests for dynamic candidates.
+          - Verifies downloaded bytes, digest, size and the 50 MiB ceiling before installation.
+          - Falls through failed newest candidates to older compatible official releases.
+          - Uses a verified last-known-good fallback only after official candidates are exhausted.
+          - Requires backup, server restart, Running state and Endweave + VoiceCraft startup-log verification before Ready.
 
           ### Production versions
           - VoiceCraft upstream: **v1.7.1** (`85aaccccbb58adb23e8c87144e8b1c24bf4b2011`)
-          - Android: **1.7.1-android-phase2-ui5-mcsv-v3-endweave** / version code **20**
+          - Android: **1.7.1-android-phase2-ui5-mcsv-v3.0.1-endweave** / version code **21**
           - VoiceCraft Endstone plugin: **0.2.8**
           - Item Mic: **2.4.0 Hidden Single Mic**
+          - Endweave manual asset: **0.5.1**
           - Relay: **0.2.1 / protocol 1**
           - Voice Range + StrongFade50 preserved
-
-          The attached Endweave wheel is provided for common Linux x86_64 manual installation. The Android app itself uses the V3 resolver to select the newest compatible verified official Endweave wheel for the detected MCSV server environment.
           EOF
 
       - name: Create or update latest GitHub Release
@@ -260,6 +309,9 @@ jobs:
             "release-assets/$PLUGIN_NAME"
             "release-assets/$ADDON_NAME"
             "release-assets/$ENDWEAVE_NAME"
+            "release-assets/GPL-3.0.txt"
+            "release-assets/NOTICE.md"
+            "release-assets/$SOURCE_ARCHIVE"
             "release-assets/SHA256SUMS.txt"
           )
           if gh release view "$TAG" >/dev/null 2>&1; then
@@ -269,7 +321,7 @@ jobs:
             gh release create "$TAG" "${assets[@]}" --target "$GITHUB_SHA" --title "$RELEASE_NAME" --notes-file release-notes.md --latest
           fi
 
-      - name: Verify new release contains required package
+      - name: Verify new release contains complete package
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -280,9 +332,13 @@ jobs:
           grep -Fxq "$PLUGIN_NAME" <<<"$names"
           grep -Fxq "$ADDON_NAME" <<<"$names"
           grep -Fxq "$ENDWEAVE_NAME" <<<"$names"
+          grep -Fxq 'GPL-3.0.txt' <<<"$names"
+          grep -Fxq 'NOTICE.md' <<<"$names"
+          grep -Fxq "$SOURCE_ARCHIVE" <<<"$names"
           grep -Fxq 'SHA256SUMS.txt' <<<"$names"
+          test "$(grep -c . <<<"$names")" -eq 8
 
-      - name: Remove all older GitHub Releases and their tags
+      - name: Remove all older GitHub Releases
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -291,9 +347,24 @@ jobs:
           while IFS= read -r old_tag; do
             [ -z "$old_tag" ] && continue
             [ "$old_tag" = "$TAG" ] && continue
-            echo "Removing old release and tag: $old_tag"
-            gh release delete "$old_tag" --cleanup-tag -y
+            echo "Removing old release: $old_tag"
+            gh release delete "$old_tag" -y
           done < <(gh release list --limit 100 --json tagName --jq '.[].tagName')
+
+      - name: Remove all historical Git tags except current release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          while IFS= read -r ref; do
+            [ -z "$ref" ] && continue
+            tag="${ref#refs/tags/}"
+            [ "$tag" = "$TAG" ] && continue
+            encoded=$(jq -rn --arg value "$tag" '$value|@uri')
+            echo "Deleting historical tag: $tag"
+            gh api -X DELETE "repos/${GITHUB_REPOSITORY}/git/refs/tags/${encoded}"
+          done < <(gh api --paginate "repos/${GITHUB_REPOSITORY}/git/matching-refs/tags/" --jq '.[].ref')
 
       - name: Remove legacy branches and keep only main plus latest tested branch
         shell: bash
@@ -310,15 +381,21 @@ jobs:
             gh api -X DELETE "repos/${GITHUB_REPOSITORY}/git/refs/heads/${encoded}"
           done < <(gh api --paginate "repos/${GITHUB_REPOSITORY}/branches?per_page=100" --jq '.[].name')
 
-      - name: Final repository cleanup audit
+      - name: Final repository release and cleanup audit
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+
           release_tags=$(gh release list --limit 100 --json tagName --jq '.[].tagName')
           test "$(grep -c . <<<"$release_tags")" -eq 1
           grep -Fxq "$TAG" <<<"$release_tags"
+
+          git_tags=$(gh api --paginate "repos/${GITHUB_REPOSITORY}/git/matching-refs/tags/" --jq '.[].ref' | sed 's#^refs/tags/##' | sort)
+          printf '%s\n' "$git_tags"
+          test "$(grep -c . <<<"$git_tags")" -eq 1
+          grep -Fxq "$TAG" <<<"$git_tags"
 
           branches=$(gh api --paginate "repos/${GITHUB_REPOSITORY}/branches?per_page=100" --jq '.[].name' | sort)
           printf '%s\n' "$branches"
@@ -326,9 +403,20 @@ jobs:
           grep -Fxq 'main' <<<"$branches"
           grep -Fxq "$KEEP_TEST_BRANCH" <<<"$branches"
 
+          names=$(gh release view "$TAG" --json assets --jq '.assets[].name')
+          test "$(grep -c . <<<"$names")" -eq 8
+          grep -Fxq "$APK_NAME" <<<"$names"
+          grep -Fxq "$PLUGIN_NAME" <<<"$names"
+          grep -Fxq "$ADDON_NAME" <<<"$names"
+          grep -Fxq "$ENDWEAVE_NAME" <<<"$names"
+          grep -Fxq 'GPL-3.0.txt' <<<"$names"
+          grep -Fxq 'NOTICE.md' <<<"$names"
+          grep -Fxq "$SOURCE_ARCHIVE" <<<"$names"
+          grep -Fxq 'SHA256SUMS.txt' <<<"$names"
+
       - name: Upload final release bundle as CI artifact
         uses: actions/upload-artifact@v4
         with:
-          name: VoiceCraft-MCSV-Endweave-V3-Complete-Release
+          name: VoiceCraft-MCSV-Endweave-V3.0.1-Complete-Release
           if-no-files-found: error
           path: release-assets/*
