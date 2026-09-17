@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 from pathlib import Path
+import re
 import sys
 
 MARKER = "MCSV_INSTALL_DETAILED_LOGGING"
@@ -203,12 +204,19 @@ def main() -> None:
         "route install failures through structured MCSV logger",
     )
 
-    old_subtitle = '            T("ดูเหตุการณ์ล่าสุด สาเหตุ Error และคำแนะนำการแก้ไข", "Inspect recent activity, error causes, and suggested fixes"));'
-    new_subtitle = '            T("ดูเหตุการณ์ล่าสุด รวมขั้นตอน MCSV INSTALL, OK, WARN, ERROR และคำแนะนำการแก้ไข", "Inspect recent activity including MCSV INSTALL steps, OK, WARN, ERROR, and suggested fixes"));'
-    if old_subtitle in ui:
-        ui = ui.replace(old_subtitle, new_subtitle, 1)
-    else:
-        raise RuntimeError("MCSV detailed-log patch could not update Diagnostics subtitle")
+    diagnostics_pattern = re.compile(
+        r'(private ScrollView BuildLogs\(\).*?NewPage\(\s*'
+        r'T\("วิเคราะห์ระบบ",\s*"Diagnostics"\),\s*)'
+        r'T\("[^"]*",\s*"[^"]*"\)\);',
+        re.S,
+    )
+    diagnostics_replacement = (
+        r'\1T("ดูเหตุการณ์ล่าสุด รวมขั้นตอน MCSV INSTALL, OK, WARN, ERROR และคำแนะนำการแก้ไข", '
+        r'"Inspect recent activity including MCSV INSTALL steps, OK, WARN, ERROR, and suggested fixes"));'
+    )
+    ui, count = diagnostics_pattern.subn(diagnostics_replacement, ui, count=1)
+    if count != 1:
+        raise RuntimeError("MCSV detailed-log patch could not locate BuildLogs Diagnostics subtitle")
 
     activity.write_text(ui, encoding="utf-8")
 
