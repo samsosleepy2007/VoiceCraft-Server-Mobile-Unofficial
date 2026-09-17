@@ -15,6 +15,7 @@ on:
       - "tools/apply_mcsv_endweave_v2_ui.py"
       - "tools/apply_mcsv_install_logging.py"
       - "tools/apply_release_channel_v3_hotfix.py"
+      - "release-manifest.json"
       - ".github/workflows/build-mcsv-integration.yml"
   pull_request:
     branches: [main]
@@ -29,6 +30,7 @@ on:
       - "tools/apply_mcsv_endweave_v2_ui.py"
       - "tools/apply_mcsv_install_logging.py"
       - "tools/apply_release_channel_v3_hotfix.py"
+      - "release-manifest.json"
       - ".github/workflows/build-mcsv-integration.yml"
 
 jobs:
@@ -98,6 +100,8 @@ jobs:
           set -euo pipefail
           check() { echo "[guard] $1"; shift; "$@"; }
           check "patch scripts compile" python -m compileall -q tools/apply_mcsv_integration.py tools/apply_mcsv_theme_guide_fix.py tools/apply_mcsv_endweave_v2.py tools/apply_mcsv_endweave_v2_ui.py tools/apply_mcsv_install_logging.py tools/apply_release_channel_v3_hotfix.py
+          check "current release manifest protocol 1" grep -Fq '"protocol": 1' release-manifest.json
+          check "current release manifest V3.0.1" grep -Fq '1.7.1-android-phase2-ui5-mcsv-v3.0.1-endweave' release-manifest.json
           check "theme helper copied" test -s VoiceCraft.Server.Android/ThemedDialogHelper.cs
           check "MCSV logo" test -s VoiceCraft.Server.Android/Resources/drawable/mcsv_logo.webp
           check "token store" test -f VoiceCraft.Server.Android/McsvTokenStore.cs
