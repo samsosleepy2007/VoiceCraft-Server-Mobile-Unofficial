@@ -50,11 +50,13 @@ internal static class McsvInstallLogger
             _lastStep = safe;
         }
 
-        var state = safe.StartsWith("OK", StringComparison.OrdinalIgnoreCase)
+        var state = safe.StartsWith("OK", StringComparison.OrdinalIgnoreCase) ||
+                    safe.StartsWith("DIGEST PASS", StringComparison.OrdinalIgnoreCase)
             ? "OK"
             : safe.StartsWith("Ready", StringComparison.OrdinalIgnoreCase)
                 ? "READY"
-                : safe.StartsWith("WARNING", StringComparison.OrdinalIgnoreCase)
+                : safe.StartsWith("WARN", StringComparison.OrdinalIgnoreCase) ||
+                  safe.StartsWith("DIGEST FAIL", StringComparison.OrdinalIgnoreCase)
                     ? "WARN"
                     : "STEP";
 
@@ -116,6 +118,11 @@ internal static class McsvInstallLogger
         if (message.Contains("PackageNotFoundError", StringComparison.OrdinalIgnoreCase) ||
             message.Contains("No package metadata was found", StringComparison.OrdinalIgnoreCase))
             return "A Python package did not finish installing. Check the wheel selection and the preceding pip error.";
+
+        if (message.Contains("SHA-256", StringComparison.OrdinalIgnoreCase) ||
+            message.Contains("digest", StringComparison.OrdinalIgnoreCase) ||
+            message.Contains("size changed", StringComparison.OrdinalIgnoreCase))
+            return "Endweave wheel integrity verification failed. Do not install that candidate; use another verified official release or the verified last-known-good fallback.";
 
         if (message.Contains("missing required permissions", StringComparison.OrdinalIgnoreCase) ||
             message.Contains("Full access", StringComparison.OrdinalIgnoreCase))
