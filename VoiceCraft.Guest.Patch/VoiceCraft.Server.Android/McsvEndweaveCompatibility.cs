@@ -100,12 +100,12 @@ internal static class McsvEndweaveCompatibility
             var suffix = match.Groups[1].Value.Trim();
             if (suffix.Length == 0)
                 return ">=0";
-            if (suffix.StartsWith('[', StringComparison.Ordinal))
+            if (suffix.StartsWith("[", StringComparison.Ordinal))
             {
                 var closing = suffix.IndexOf(']');
                 suffix = closing >= 0 ? suffix[(closing + 1)..].Trim() : string.Empty;
             }
-            if (suffix.StartsWith(';', StringComparison.Ordinal))
+            if (suffix.StartsWith(";", StringComparison.Ordinal))
                 return ">=0";
             return suffix.Length == 0 ? ">=0" : suffix;
         }
@@ -129,7 +129,7 @@ internal static class McsvEndweaveCompatibility
                 return false;
 
             var versionText = clause[op.Length..].Trim();
-            if (op is "==" or "!=" && versionText.EndsWith(".*", StringComparison.Ordinal))
+            if ((op is "==" or "!=") && versionText.EndsWith(".*", StringComparison.Ordinal))
             {
                 var prefix = versionText[..^2];
                 var actual = version.ToString();
