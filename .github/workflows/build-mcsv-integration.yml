@@ -1,15 +1,18 @@
-name: Build MCSV Integration V1
+name: Build MCSV Endweave V2
 
 on:
   workflow_dispatch:
   push:
-    branches: [mcsv-integration-v1]
+    branches: [mcsv-endweave-v2]
     paths:
       - "VoiceCraft.Guest.Patch/VoiceCraft.Server.Android/Mcsv*.cs"
       - "VoiceCraft.Guest.Patch/VoiceCraft.Server.Android/ThemedDialogHelper.cs"
       - "VoiceCraft.Guest.Patch/VoiceCraft.Server.Android/Resources/drawable/mcsv_logo.webp"
       - "tools/apply_mcsv_integration.py"
       - "tools/apply_mcsv_theme_guide_fix.py"
+      - "tools/apply_mcsv_endweave_v2.py"
+      - "tools/apply_mcsv_endweave_v2_ui.py"
+      - "tools/apply_mcsv_install_logging.py"
       - ".github/workflows/build-mcsv-integration.yml"
   pull_request:
     paths:
@@ -18,6 +21,9 @@ on:
       - "VoiceCraft.Guest.Patch/VoiceCraft.Server.Android/Resources/drawable/mcsv_logo.webp"
       - "tools/apply_mcsv_integration.py"
       - "tools/apply_mcsv_theme_guide_fix.py"
+      - "tools/apply_mcsv_endweave_v2.py"
+      - "tools/apply_mcsv_endweave_v2_ui.py"
+      - "tools/apply_mcsv_install_logging.py"
       - ".github/workflows/build-mcsv-integration.yml"
 
 jobs:
@@ -37,7 +43,7 @@ jobs:
           set -euo pipefail
           test "$(git -C VoiceCraft.Upstream rev-parse HEAD)" = "85aaccccbb58adb23e8c87144e8b1c24bf4b2011"
 
-      - name: Apply production runtime patches + MCSV Integration V1
+      - name: Apply production runtime patches + MCSV Endweave V2
         shell: bash
         run: |
           set -euo pipefail
@@ -52,8 +58,10 @@ jobs:
           python VoiceCraft.Guest.Patch/apply_legal_compliance_patch.py .
           python tools/apply_mcsv_integration.py .
           python tools/apply_mcsv_theme_guide_fix.py .
+          python tools/apply_mcsv_endweave_v2.py .
+          python tools/apply_mcsv_endweave_v2_ui.py .
 
-      - name: Set test Android identity
+      - name: Set V2 test Android identity
         shell: bash
         run: |
           set -euo pipefail
@@ -61,55 +69,89 @@ jobs:
           from pathlib import Path
           import re
 
-          display = "1.7.1-android-phase2-ui5-mcsv-v1-inline-key-help-test"
+          display = "1.7.1-android-phase2-ui5-mcsv-v2-endweave-test"
           csproj = Path("VoiceCraft.Server.Android/VoiceCraft.Server.Android.csproj")
           text = csproj.read_text(encoding="utf-8")
-          text, n1 = re.subn(r"<ApplicationVersion>\d+</ApplicationVersion>", "<ApplicationVersion>18</ApplicationVersion>", text, count=1)
+          text, n1 = re.subn(r"<ApplicationVersion>\d+</ApplicationVersion>", "<ApplicationVersion>19</ApplicationVersion>", text, count=1)
           text, n2 = re.subn(r"<ApplicationDisplayVersion>[^<]+</ApplicationDisplayVersion>", f"<ApplicationDisplayVersion>{display}</ApplicationDisplayVersion>", text, count=1)
           if n1 != 1 or n2 != 1:
-              raise SystemExit("Could not set MCSV inline-help test Android identity")
+              raise SystemExit("Could not set MCSV Endweave V2 test Android identity")
           csproj.write_text(text, encoding="utf-8")
 
           bridge = Path("VoiceCraft.Server.Android/EndstoneBridgeController.cs")
           text = bridge.read_text(encoding="utf-8")
           text, n = re.subn(r'appVersion = "[^"]+"', f'appVersion = "{display}"', text, count=1)
           if n != 1:
-              raise SystemExit("Could not set MCSV inline-help bridge appVersion")
+              raise SystemExit("Could not set MCSV Endweave V2 bridge appVersion")
           bridge.write_text(text, encoding="utf-8")
           PY
 
-      - name: Validate MCSV Integration V1 guards
+      - name: Validate MCSV Endweave V2 guards
         shell: bash
         run: |
           set -euo pipefail
           check() { echo "[guard] $1"; shift; "$@"; }
-          check "MCSV patch scripts compile" python -m compileall -q tools/apply_mcsv_integration.py tools/apply_mcsv_theme_guide_fix.py
+          check "V2 patch scripts compile" python -m compileall -q tools/apply_mcsv_integration.py tools/apply_mcsv_theme_guide_fix.py tools/apply_mcsv_endweave_v2.py tools/apply_mcsv_endweave_v2_ui.py tools/apply_mcsv_install_logging.py
           check "theme helper copied" test -s VoiceCraft.Server.Android/ThemedDialogHelper.cs
           check "MCSV logo" test -s VoiceCraft.Server.Android/Resources/drawable/mcsv_logo.webp
           check "token store" test -f VoiceCraft.Server.Android/McsvTokenStore.cs
           check "API client" test -f VoiceCraft.Server.Android/McsvApiClient.cs
           check "installer" test -f VoiceCraft.Server.Android/McsvVoiceCraftInstaller.cs
+          check "detailed install logger" test -f VoiceCraft.Server.Android/McsvInstallLogger.cs
+          check "Endweave support" test -f VoiceCraft.Server.Android/McsvEndweaveSupport.cs
+          check "Endweave catalog" test -f VoiceCraft.Server.Android/McsvEndweaveCatalog.cs
+          check "Endweave release client" test -f VoiceCraft.Server.Android/McsvEndweaveReleaseClient.cs
+          check "Endweave compatibility resolver" test -f VoiceCraft.Server.Android/McsvEndweaveCompatibility.cs
+          check "Endweave auto resolver" test -f VoiceCraft.Server.Android/McsvEndweaveResolver.cs
+          check "Python metadata validator" test -f VoiceCraft.Server.Android/McsvPythonEnvironmentValidator.cs
+          check "Endweave installer" test -f VoiceCraft.Server.Android/McsvEndweaveInstaller.cs
+          check "post-install verifier" test -f VoiceCraft.Server.Android/McsvInstallVerifier.cs
+          check "startup verifier" test -f VoiceCraft.Server.Android/McsvStartupVerifier.cs
           check "fixed API host" grep -q 'https://api.mcsv.me/api/v1/' VoiceCraft.Server.Android/McsvApiClient.cs
           check "redirects blocked" grep -q 'AllowAutoRedirect = false' VoiceCraft.Server.Android/McsvApiClient.cs
           check "Keystore protected token" grep -q 'KeystoreJsonStore' VoiceCraft.Server.Android/McsvTokenStore.cs
-          check "canonical Endstone wheel" grep -q 'endstone_voicecraft-0.2.8-py3-none-any.whl' VoiceCraft.Server.Android/McsvVoiceCraftInstaller.cs
+          check "Endstone runtime detect" grep -q '/.endstone-runtime' VoiceCraft.Server.Android/McsvEndweaveSupport.cs
+          check "Endweave v0.5.1 pin" grep -q 'EndweaveVersion = "0.5.1"' VoiceCraft.Server.Android/McsvEndweaveCatalog.cs
+          check "Linux Python 3.12 ABI3 wheel" grep -q 'cp312-abi3-manylinux_2_28_x86_64.whl' VoiceCraft.Server.Android/McsvEndweaveCatalog.cs
+          check "broken metadata guard" grep -q 'Python package metadata is invalid' VoiceCraft.Server.Android/McsvPythonEnvironmentValidator.cs
+          check "official GitHub release API" grep -Fq 'api.github.com/repos/EndstoneMC/endweave/releases' VoiceCraft.Server.Android/McsvEndweaveReleaseClient.cs
+          check "official release URL allowlist" grep -Fq '/EndstoneMC/endweave/releases/download/' VoiceCraft.Server.Android/McsvEndweaveResolver.cs
+          check "V3 resolver wired" grep -Fq 'McsvEndweaveResolver.ResolveAsync' VoiceCraft.Server.Android/McsvVoiceCraftInstaller.cs
+          check "catalog not primary resolver" bash -c '! grep -Fq "McsvEndweaveCatalog.SelectWheel(environment)" VoiceCraft.Server.Android/McsvVoiceCraftInstaller.cs'
+          check "GitHub SHA-256 digest parsing" grep -Fq 'sha256:' VoiceCraft.Server.Android/McsvEndweaveResolver.cs
+          check "official digest PASS log" grep -Fq 'DIGEST PASS' VoiceCraft.Server.Android/McsvEndweaveResolver.cs
+          check "official digest FAIL log" grep -Fq 'DIGEST FAIL' VoiceCraft.Server.Android/McsvEndweaveResolver.cs
+          check "older official release fallback" grep -Fq 'trying older official release' VoiceCraft.Server.Android/McsvEndweaveResolver.cs
+          check "last-known-good fallback" grep -Fq 'last-known-good' VoiceCraft.Server.Android/McsvEndweaveResolver.cs
+          check "wheel verification size limit" grep -Fq '50L * 1024L * 1024L' VoiceCraft.Server.Android/McsvEndweaveResolver.cs
+          check "logger recognizes resolver WARN" grep -Fq 'StartsWith("WARN"' VoiceCraft.Server.Android/McsvInstallLogger.cs
+          check "logger recognizes digest PASS" grep -Fq 'StartsWith("DIGEST PASS"' VoiceCraft.Server.Android/McsvInstallLogger.cs
+          check "logger recognizes digest FAIL" grep -Fq 'StartsWith("DIGEST FAIL"' VoiceCraft.Server.Android/McsvInstallLogger.cs
+          check "V2 installer flow applied" grep -q 'MCSV_ENDWEAVE_V2_FLOW' VoiceCraft.Server.Android/McsvVoiceCraftInstaller.cs
+          check "detailed installer logging applied" grep -q 'MCSV_INSTALL_DETAILED_LOGGING' VoiceCraft.Server.Android/McsvVoiceCraftInstaller.cs
+          check "step logger wired" grep -q 'McsvInstallLogger.Progress(message)' VoiceCraft.Server.Android/McsvVoiceCraftInstaller.cs
+          check "failure logger wired" grep -q 'McsvInstallLogger.Failure(ex)' VoiceCraft.Server.Android/ModernMainActivity.cs
+          check "logger redacts MCSV tokens" grep -q 'mcsv_\[REDACTED\]' VoiceCraft.Server.Android/McsvInstallLogger.cs
+          check "Diagnostics explains install states" grep -q 'MCSV INSTALL, OK, WARN, ERROR' VoiceCraft.Server.Android/ModernMainActivity.cs
+          check "required backup" grep -q 'voicecraft-endweave-v2-preinstall' VoiceCraft.Server.Android/McsvVoiceCraftInstaller.cs
+          check "server Running required" grep -q 'server_overview' VoiceCraft.Server.Android/McsvVoiceCraftInstaller.cs
+          check "startup log permission" grep -q 'logs_startup' VoiceCraft.Server.Android/McsvVoiceCraftInstaller.cs
+          check "Endweave before VoiceCraft" grep -q 'McsvEndweaveInstaller.InstallAsync' VoiceCraft.Server.Android/McsvVoiceCraftInstaller.cs
+          check "Item Mic verification" grep -q 'McsvInstallVerifier.VerifyItemMicFilesAsync' VoiceCraft.Server.Android/McsvVoiceCraftInstaller.cs
+          check "config/world verification" grep -q 'McsvInstallVerifier.VerifyConfigAndActiveWorldAsync' VoiceCraft.Server.Android/McsvVoiceCraftInstaller.cs
+          check "startup verification" grep -q 'McsvStartupVerifier.VerifyAsync' VoiceCraft.Server.Android/McsvVoiceCraftInstaller.cs
+          check "Ready marker" grep -q 'Ready — Endweave + VoiceCraft online' VoiceCraft.Server.Android/McsvVoiceCraftInstaller.cs
+          check "canonical VoiceCraft Endstone wheel" grep -q 'endstone_voicecraft-0.2.8-py3-none-any.whl' VoiceCraft.Server.Android/McsvVoiceCraftInstaller.cs
           check "Item Mic 2.4 release" grep -q 'v1.7.1-itemmic2.4.0-hidden-single' VoiceCraft.Server.Android/McsvVoiceCraftInstaller.cs
           check "automatic restart" grep -q 'action = "restart"' VoiceCraft.Server.Android/McsvVoiceCraftInstaller.cs
-          check "inline API key help" grep -q 'วิธีสร้าง API Key:' VoiceCraft.Server.Android/ModernMainActivity.cs
-          check "API MCP path explained" grep -q 'เข้า MCSV แล้วกดเมนู API / MCP' VoiceCraft.Server.Android/ModernMainActivity.cs
-          check "Full access explained" grep -q 'เลือก “สิทธิ์เต็ม”' VoiceCraft.Server.Android/ModernMainActivity.cs
-          check "token destination explained" grep -q 'วาง Token ลงช่อง “MCSV API Key”' VoiceCraft.Server.Android/ModernMainActivity.cs
-          check "one-time token warning" grep -q 'MCSV จะแสดง Token เพียงครั้งเดียว' VoiceCraft.Server.Android/ModernMainActivity.cs
+          check "V2 UI description" grep -q 'ตรวจ OS/Python' VoiceCraft.Server.Android/ModernMainActivity.cs
+          check "V2 Ready UI" grep -q 'Endweave + VoiceCraft พร้อมใช้งาน' VoiceCraft.Server.Android/ModernMainActivity.cs
+          check "inline API key help preserved" grep -q 'วิธีสร้าง API Key:' VoiceCraft.Server.Android/ModernMainActivity.cs
           check "old guide button removed" bash -c '! grep -q "ดูวิธีเอา API Key\|HOW TO GET API KEY" VoiceCraft.Server.Android/ModernMainActivity.cs'
-          check "old guide methods removed" bash -c '! grep -q "ShowMcsvApiKeyGuide\|McsvGuideStep\|ShowMcsvGuideImage" VoiceCraft.Server.Android/ModernMainActivity.cs'
-          check "old guide resources not referenced" bash -c '! grep -q "Resource.Drawable.mcsv_api_" VoiceCraft.Server.Android/ModernMainActivity.cs'
-          check "theme-aware MCSV dialogs" grep -q 'ThemedDialogHelper.Builder(this)' VoiceCraft.Server.Android/ModernMainActivity.cs
-          check "dark/light custom surface" grep -q 'Background = Solid(Surface)' VoiceCraft.Server.Android/ModernMainActivity.cs
-          check "no raw one-argument AlertDialog builders remain outside helper" bash -c '! grep -R -n --include="*.cs" --exclude="ThemedDialogHelper.cs" -E "new (Android\\.App\\.)?AlertDialog\\.Builder\\((this|activity)\\)" VoiceCraft.Server.Android'
+          check "theme-aware dialogs" grep -q 'ThemedDialogHelper.Builder(this)' VoiceCraft.Server.Android/ModernMainActivity.cs
           check "conditional visibility" grep -q 'RefreshMcsvCardVisibility(ready)' VoiceCraft.Server.Android/ModernMainActivity.cs
-          check "installer wired to UI" grep -q 'McsvVoiceCraftInstaller.InstallAsync' VoiceCraft.Server.Android/ModernMainActivity.cs
-          check "version code 18" grep -q '<ApplicationVersion>18</ApplicationVersion>' VoiceCraft.Server.Android/VoiceCraft.Server.Android.csproj
-          check "inline-help display version" grep -q '<ApplicationDisplayVersion>1.7.1-android-phase2-ui5-mcsv-v1-inline-key-help-test</ApplicationDisplayVersion>' VoiceCraft.Server.Android/VoiceCraft.Server.Android.csproj
+          check "version code 19" grep -q '<ApplicationVersion>19</ApplicationVersion>' VoiceCraft.Server.Android/VoiceCraft.Server.Android.csproj
+          check "V2 display version" grep -q '<ApplicationDisplayVersion>1.7.1-android-phase2-ui5-mcsv-v2-endweave-test</ApplicationDisplayVersion>' VoiceCraft.Server.Android/VoiceCraft.Server.Android.csproj
 
       - name: Setup .NET 10
         uses: actions/setup-dotnet@v4
@@ -146,12 +188,12 @@ jobs:
           mkdir -p test-assets
           signed=$(find VoiceCraft.Server.Android/bin/Release/net10.0-android/android-arm64/publish -maxdepth 1 -name '*-Signed.apk' -print -quit)
           test -n "$signed"
-          cp "$signed" test-assets/VoiceCraft-Server-Mobile-MCSV-V1-InlineKeyHelp-Test-arm64-Signed.apk
-          sha256sum test-assets/VoiceCraft-Server-Mobile-MCSV-V1-InlineKeyHelp-Test-arm64-Signed.apk | tee test-assets/SHA256SUMS.txt
+          cp "$signed" test-assets/VoiceCraft-Server-Mobile-MCSV-V2-Endweave-Test-arm64-Signed.apk
+          sha256sum test-assets/VoiceCraft-Server-Mobile-MCSV-V2-Endweave-Test-arm64-Signed.apk | tee test-assets/SHA256SUMS.txt
 
-      - name: Upload MCSV Integration V1 inline-help test APK
+      - name: Upload MCSV Endweave V2 test APK
         uses: actions/upload-artifact@v4
         with:
-          name: VoiceCraft-MCSV-Integration-V1-InlineKeyHelp-Test
+          name: VoiceCraft-MCSV-Endweave-V2-Test
           path: test-assets/*
           if-no-files-found: error

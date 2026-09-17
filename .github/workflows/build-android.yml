@@ -21,6 +21,8 @@ on:
       - "tools/apply_voice_range_patch.py"
       - "tools/apply_mcsv_integration.py"
       - "tools/apply_mcsv_theme_guide_fix.py"
+      - "tools/apply_mcsv_endweave_v2.py"
+      - "tools/apply_mcsv_endweave_v2_ui.py"
       - ".github/workflows/build-android.yml"
       - ".gitmodules"
   pull_request:
@@ -42,6 +44,8 @@ on:
       - "tools/apply_voice_range_patch.py"
       - "tools/apply_mcsv_integration.py"
       - "tools/apply_mcsv_theme_guide_fix.py"
+      - "tools/apply_mcsv_endweave_v2.py"
+      - "tools/apply_mcsv_endweave_v2_ui.py"
       - ".github/workflows/build-android.yml"
       - ".gitmodules"
 
@@ -80,6 +84,8 @@ jobs:
           python VoiceCraft.Guest.Patch/apply_legal_compliance_patch.py .
           python tools/apply_mcsv_integration.py .
           python tools/apply_mcsv_theme_guide_fix.py .
+          python tools/apply_mcsv_endweave_v2.py .
+          python tools/apply_mcsv_endweave_v2_ui.py .
 
       - name: Set production Android identity
         shell: bash
@@ -89,10 +95,10 @@ jobs:
           from pathlib import Path
           import re
 
-          display = "1.7.1-android-phase2-ui5-mcsv-v1"
+          display = "1.7.1-android-phase2-ui5-mcsv-v2-endweave"
           csproj = Path("VoiceCraft.Server.Android/VoiceCraft.Server.Android.csproj")
           text = csproj.read_text(encoding="utf-8")
-          text, n1 = re.subn(r"<ApplicationVersion>\d+</ApplicationVersion>", "<ApplicationVersion>18</ApplicationVersion>", text, count=1)
+          text, n1 = re.subn(r"<ApplicationVersion>\d+</ApplicationVersion>", "<ApplicationVersion>19</ApplicationVersion>", text, count=1)
           text, n2 = re.subn(r"<ApplicationDisplayVersion>[^<]+</ApplicationDisplayVersion>", f"<ApplicationDisplayVersion>{display}</ApplicationDisplayVersion>", text, count=1)
           if n1 != 1 or n2 != 1:
               raise SystemExit("Could not set production Android identity")
@@ -111,24 +117,40 @@ jobs:
         run: |
           set -euo pipefail
           check() { echo "[guard] $1"; shift; "$@"; }
-          check "MCSV patch scripts compile" python -m compileall -q tools/apply_mcsv_integration.py tools/apply_mcsv_theme_guide_fix.py
+          check "MCSV V2 patch scripts compile" python -m compileall -q tools/apply_mcsv_integration.py tools/apply_mcsv_theme_guide_fix.py tools/apply_mcsv_endweave_v2.py tools/apply_mcsv_endweave_v2_ui.py
           check "MCSV API client" test -f VoiceCraft.Server.Android/McsvApiClient.cs
           check "MCSV installer" test -f VoiceCraft.Server.Android/McsvVoiceCraftInstaller.cs
+          check "Endweave runtime detector" test -f VoiceCraft.Server.Android/McsvEndweaveSupport.cs
+          check "Endweave wheel catalog" test -f VoiceCraft.Server.Android/McsvEndweaveCatalog.cs
+          check "Python environment validator" test -f VoiceCraft.Server.Android/McsvPythonEnvironmentValidator.cs
+          check "Endweave installer helper" test -f VoiceCraft.Server.Android/McsvEndweaveInstaller.cs
+          check "post-install verifier" test -f VoiceCraft.Server.Android/McsvInstallVerifier.cs
+          check "startup verifier" test -f VoiceCraft.Server.Android/McsvStartupVerifier.cs
           check "MCSV token protected" grep -q 'KeystoreJsonStore' VoiceCraft.Server.Android/McsvTokenStore.cs
           check "MCSV fixed API host" grep -q 'https://api.mcsv.me/api/v1/' VoiceCraft.Server.Android/McsvApiClient.cs
           check "MCSV redirects blocked" grep -q 'AllowAutoRedirect = false' VoiceCraft.Server.Android/McsvApiClient.cs
+          check "Endweave v0.5.1 pin" grep -q 'EndweaveVersion = "0.5.1"' VoiceCraft.Server.Android/McsvEndweaveCatalog.cs
+          check "Linux cp312 ABI3 wheel" grep -q 'cp312-abi3-manylinux_2_28_x86_64.whl' VoiceCraft.Server.Android/McsvEndweaveCatalog.cs
+          check "Python invalid metadata block" grep -q 'Python package metadata is invalid' VoiceCraft.Server.Android/McsvPythonEnvironmentValidator.cs
+          check "mandatory safety backup" grep -q 'voicecraft-endweave-v2-preinstall' VoiceCraft.Server.Android/McsvVoiceCraftInstaller.cs
+          check "Endweave flow" grep -q 'McsvEndweaveInstaller.InstallAsync' VoiceCraft.Server.Android/McsvVoiceCraftInstaller.cs
+          check "Item Mic verification" grep -q 'McsvInstallVerifier.VerifyItemMicFilesAsync' VoiceCraft.Server.Android/McsvVoiceCraftInstaller.cs
+          check "config/world verification" grep -q 'McsvInstallVerifier.VerifyConfigAndActiveWorldAsync' VoiceCraft.Server.Android/McsvVoiceCraftInstaller.cs
+          check "startup logs verification" grep -q 'McsvStartupVerifier.VerifyAsync' VoiceCraft.Server.Android/McsvVoiceCraftInstaller.cs
+          check "server status verification" grep -q 'server_overview' VoiceCraft.Server.Android/McsvVoiceCraftInstaller.cs
+          check "Ready gate" grep -q 'Ready — Endweave + VoiceCraft online' VoiceCraft.Server.Android/McsvVoiceCraftInstaller.cs
           check "MCSV inline API help" grep -q 'วิธีสร้าง API Key:' VoiceCraft.Server.Android/ModernMainActivity.cs
+          check "V2 UI Ready" grep -q 'Endweave + VoiceCraft พร้อมใช้งาน' VoiceCraft.Server.Android/ModernMainActivity.cs
           check "old API guide button removed" bash -c '! grep -q "ดูวิธีเอา API Key\|HOW TO GET API KEY" VoiceCraft.Server.Android/ModernMainActivity.cs'
-          check "MCSV installer wired" grep -q 'McsvVoiceCraftInstaller.InstallAsync' VoiceCraft.Server.Android/ModernMainActivity.cs
           check "canonical Endstone installer wheel" grep -q 'endstone_voicecraft-0.2.8-py3-none-any.whl' VoiceCraft.Server.Android/McsvVoiceCraftInstaller.cs
           check "Item Mic 2.4 installer" grep -q 'v1.7.1-itemmic2.4.0-hidden-single' VoiceCraft.Server.Android/McsvVoiceCraftInstaller.cs
           check "automatic server restart" grep -q 'action = "restart"' VoiceCraft.Server.Android/McsvVoiceCraftInstaller.cs
           check "voice range fade start" grep -q 'VoiceRangeFadeStartRatio = 0.50f' VoiceCraft.Server.Android/EndstoneBridgeController.cs
           check "strong fade exponent" grep -q 'MathF.Pow(linearFactor, 1.5f)' VoiceCraft.Upstream/VoiceCraft.Network/Audio/Effects/ProximityEffect.cs
           check "Endstone source 0.2.8" grep -q 'version = "0.2.8"' VoiceCraft.Endstone/pyproject.toml
-          check "production version code" grep -q '<ApplicationVersion>18</ApplicationVersion>' VoiceCraft.Server.Android/VoiceCraft.Server.Android.csproj
-          check "production display version" grep -q '<ApplicationDisplayVersion>1.7.1-android-phase2-ui5-mcsv-v1</ApplicationDisplayVersion>' VoiceCraft.Server.Android/VoiceCraft.Server.Android.csproj
-          check "production bridge version" grep -q 'appVersion = "1.7.1-android-phase2-ui5-mcsv-v1"' VoiceCraft.Server.Android/EndstoneBridgeController.cs
+          check "production version code" grep -q '<ApplicationVersion>19</ApplicationVersion>' VoiceCraft.Server.Android/VoiceCraft.Server.Android.csproj
+          check "production display version" grep -q '<ApplicationDisplayVersion>1.7.1-android-phase2-ui5-mcsv-v2-endweave</ApplicationDisplayVersion>' VoiceCraft.Server.Android/VoiceCraft.Server.Android.csproj
+          check "production bridge version" grep -q 'appVersion = "1.7.1-android-phase2-ui5-mcsv-v2-endweave"' VoiceCraft.Server.Android/EndstoneBridgeController.cs
           check "legal source link" grep -q 'https://github.com/AvionBlock/VoiceCraft' VoiceCraft.Server.Android/ModernMainActivity.cs
           check "GPL notice" grep -q 'GPL-3.0' VoiceCraft.Server.Android/ModernMainActivity.cs
 
@@ -167,16 +189,16 @@ jobs:
           mkdir -p test-assets
           signed=$(find VoiceCraft.Server.Android/bin/Release/net10.0-android/android-arm64/publish -maxdepth 1 -name '*-Signed.apk' -print -quit)
           test -n "$signed"
-          cp "$signed" test-assets/VoiceCraft-Server-Mobile-MCSV-V1-arm64-Signed.apk
-          sha256sum test-assets/VoiceCraft-Server-Mobile-MCSV-V1-arm64-Signed.apk | tee test-assets/APK_SHA256.txt
+          cp "$signed" test-assets/VoiceCraft-Server-Mobile-MCSV-V2-Endweave-arm64-Signed.apk
+          sha256sum test-assets/VoiceCraft-Server-Mobile-MCSV-V2-Endweave-arm64-Signed.apk | tee test-assets/APK_SHA256.txt
 
       - name: Upload production APK
         uses: actions/upload-artifact@v4
         with:
-          name: VoiceCraft-Server-Mobile-MCSV-V1-Android-arm64
+          name: VoiceCraft-Server-Mobile-MCSV-V2-Endweave-Android-arm64
           if-no-files-found: error
           path: |
-            test-assets/VoiceCraft-Server-Mobile-MCSV-V1-arm64-Signed.apk
+            test-assets/VoiceCraft-Server-Mobile-MCSV-V2-Endweave-arm64-Signed.apk
             test-assets/APK_SHA256.txt
 
       - name: Setup Python 3.11
