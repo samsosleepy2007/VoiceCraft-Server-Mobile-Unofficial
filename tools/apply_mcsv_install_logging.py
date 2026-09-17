@@ -205,8 +205,8 @@ def main() -> None:
     )
 
     diagnostics_pattern = re.compile(
-        r'(private ScrollView BuildLogs\(\).*?NewPage\(\s*'
-        r'T\("วิเคราะห์ระบบ",\s*"Diagnostics"\),\s*)'
+        r'(private ScrollView BuildLogs\(\).*?var \(scroll, body\) = NewPage\(\s*'
+        r'T\("[^"]*",\s*"[^"]*"\),\s*)'
         r'T\("[^"]*",\s*"[^"]*"\)\);',
         re.S,
     )
@@ -216,7 +216,7 @@ def main() -> None:
     )
     ui, count = diagnostics_pattern.subn(diagnostics_replacement, ui, count=1)
     if count != 1:
-        raise RuntimeError("MCSV detailed-log patch could not locate BuildLogs Diagnostics subtitle")
+        raise RuntimeError("MCSV detailed-log patch could not locate BuildLogs subtitle")
 
     activity.write_text(ui, encoding="utf-8")
 
@@ -245,10 +245,10 @@ def main() -> None:
     if "McsvInstallLogger.Failure(ex)" not in final_ui:
         raise RuntimeError("MCSV detailed installer failure logging is not wired to the UI")
     if "MCSV INSTALL, OK, WARN, ERROR" not in final_ui:
-        raise RuntimeError("Diagnostics page does not explain MCSV installer log states")
+        raise RuntimeError("Runtime Logs page does not explain MCSV installer log states")
 
     print(f"Applied detailed MCSV installer logging to {installer}")
-    print(f"Wired MCSV failure diagnostics + Logs UI help in {activity}")
+    print(f"Wired MCSV failure diagnostics + Runtime Logs UI help in {activity}")
 
 
 if __name__ == "__main__":
