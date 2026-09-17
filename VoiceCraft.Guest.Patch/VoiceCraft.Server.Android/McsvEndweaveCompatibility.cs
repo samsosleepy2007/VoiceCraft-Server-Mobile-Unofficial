@@ -12,10 +12,10 @@ internal sealed record McsvEndweaveCandidate(
 internal static class McsvEndweaveCompatibility
 {
     private static readonly Regex RequiresPython = new(
-        @"(?m)^\s*requires-python\s*=\s*[\"']([^\"']+)[\"']",
+        "(?m)^\\s*requires-python\\s*=\\s*[\"']([^\"']+)[\"']",
         RegexOptions.Compiled | RegexOptions.CultureInvariant);
     private static readonly Regex EndstoneDependency = new(
-        @"[\"']endstone([^\"']*)[\"']",
+        "[\"']endstone([^\"']*)[\"']",
         RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
     private static readonly Regex CpTag = new(
         @"^cp(\d)(\d{1,2})$",
