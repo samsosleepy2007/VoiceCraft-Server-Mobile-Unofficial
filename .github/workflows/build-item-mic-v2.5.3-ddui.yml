@@ -1,0 +1,122 @@
+name: Build Item Mic 2.5.3 DDUI
+
+on:
+  push:
+    branches: [mcsv-endweave-v2]
+    paths:
+      - "tools/build_item_mic_addon.py"
+      - "tools/build_item_mic_voice_range_addon.py"
+      - "tools/build_item_mic_v2_5_ddui_addon.py"
+      - "tools/build_item_mic_v2_5_3_ddui_addon.py"
+      - ".github/workflows/build-item-mic-v2.5.3-ddui.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "tools/build_item_mic_addon.py"
+      - "tools/build_item_mic_voice_range_addon.py"
+      - "tools/build_item_mic_v2_5_ddui_addon.py"
+      - "tools/build_item_mic_v2_5_3_ddui_addon.py"
+      - ".github/workflows/build-item-mic-v2.5.3-ddui.yml"
+  workflow_dispatch:
+
+jobs:
+  build-item-mic-253:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install build dependency
+        run: python -m pip install pillow
+
+      - name: Compile builders
+        run: |
+          set -euo pipefail
+          python -m py_compile \
+            tools/build_item_mic_addon.py \
+            tools/build_item_mic_voice_range_addon.py \
+            tools/build_item_mic_v2_5_ddui_addon.py \
+            tools/build_item_mic_v2_5_3_ddui_addon.py
+
+      - name: Build Item Mic 2.5.3
+        run: |
+          set -euo pipefail
+          mkdir -p test-assets
+          python tools/build_item_mic_v2_5_3_ddui_addon.py \
+            . \
+            test-assets/VoiceCraft_ItemMic_v2.5.3_DDUI.mcaddon
+          test -s test-assets/VoiceCraft_ItemMic_v2.5.3_DDUI.mcaddon
+
+      - name: Validate Item Mic 2.5.3 package
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf itemmic-253-check
+          mkdir -p itemmic-253-check/top itemmic-253-check/bp itemmic-253-check/rp
+
+          unzip -q test-assets/VoiceCraft_ItemMic_v2.5.3_DDUI.mcaddon -d itemmic-253-check/top
+          test -s itemmic-253-check/top/VoiceCraft_ItemMic_BP_v2.5.3.mcpack
+          test -s itemmic-253-check/top/VoiceCraft_ItemMic_RP_v2.5.3.mcpack
+
+          unzip -q itemmic-253-check/top/VoiceCraft_ItemMic_BP_v2.5.3.mcpack -d itemmic-253-check/bp
+          unzip -q itemmic-253-check/top/VoiceCraft_ItemMic_RP_v2.5.3.mcpack -d itemmic-253-check/rp
+
+          test "$(jq -r '.header.version | join(".")' itemmic-253-check/bp/manifest.json)" = "2.5.3"
+          test "$(jq -r '.header.version | join(".")' itemmic-253-check/rp/manifest.json)" = "2.5.3"
+          test "$(jq -r '.dependencies[] | select(.module_name=="@minecraft/server-ui") | .version' itemmic-253-check/bp/manifest.json)" = "2.1.0"
+          test "$(jq -r '.dependencies[] | select(.module_name=="@minecraft/server") | .version' itemmic-253-check/bp/manifest.json)" = "2.9.0"
+
+          script=itemmic-253-check/bp/scripts/main.js
+
+          node --check "$script"
+
+          grep -Fq 'ObservableNumber' "$script"
+          grep -Fq 'const openSettingsPlayers = new Set()' "$script"
+          grep -Fq 'openSettingsPlayers.has(player.id)' "$script"
+          grep -Fq '.slider(' "$script"
+          grep -Fq '"ระยะเสียงแบบ Slider"' "$script"
+          grep -Fq '.toggle(' "$script"
+          grep -Fq '"การตั้งค่าขั้นสูง"' "$script"
+          grep -Fq 'visible: advancedVisible' "$script"
+          grep -Fq '"ใช้ระยะจาก Slider"' "$script"
+          grep -Fq '"คืนค่าเริ่มต้น"' "$script"
+          grep -Fq 'pendingRange' "$script"
+          grep -Fq 'เซิร์ฟเวอร์ยืนยันแล้ว' "$script"
+          grep -Fq 'ยังไม่ได้รับการยืนยัน' "$script"
+          grep -Fq 'Loaded v2.5.3' "$script"
+          grep -Fq 'MIC_DUPLICATE_REMOVED' "$script"
+          grep -Fq 'voicecraft.vr.request.' "$script"
+
+          ! grep -Fq 'ActionFormData' "$script"
+          ! grep -Fq 'ModalFormData' "$script"
+          ! grep -Fq 'multiButtonRow' "$script"
+          ! grep -Fq '.show(player)' "$script"
+          ! grep -Fq 'response.selection' "$script"
+          ! grep -Fq 'response.formValues' "$script"
+
+          test -s itemmic-253-check/rp/attachables/mic_off.entity.json
+          test -s itemmic-253-check/rp/attachables/mic_on.entity.json
+          test -s itemmic-253-check/rp/models/entity/voicecraft_mic_invisible.geo.json
+
+      - name: Confirm 2.5.2 rollback still builds
+        shell: bash
+        run: |
+          set -euo pipefail
+          python tools/build_item_mic_v2_5_ddui_addon.py \
+            . \
+            test-assets/VoiceCraft_ItemMic_v2.5.2_DDUI_rollback-check.mcaddon
+          test -s test-assets/VoiceCraft_ItemMic_v2.5.2_DDUI_rollback-check.mcaddon
+
+      - name: Upload Item Mic 2.5.3 test addon
+        uses: actions/upload-artifact@v4
+        with:
+          name: VoiceCraft-ItemMic-v2.5.3-DDUI-Test
+          if-no-files-found: error
+          path: test-assets/VoiceCraft_ItemMic_v2.5.3_DDUI.mcaddon
