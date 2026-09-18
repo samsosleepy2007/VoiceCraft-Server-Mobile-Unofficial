@@ -73,12 +73,19 @@ jobs:
           test "$(jq -r '.header.uuid' horizontal-check/bp/manifest.json)" = "46951783-7b21-4d1e-9ed9-5165a18291e7"
           test "$(jq -r '.header.uuid' horizontal-check/rp/manifest.json)" = "472b0285-0ae2-4192-81be-576adbba30d3"
 
-          test "$(jq -r '.dependencies[] | select(.module_name=="@minecraft/server-ui") | .version' horizontal-check/bp/manifest.json)" = "2.4.0-beta.1.26.60-preview.25"
-          test "$(jq -r '.dependencies[] | select(.module_name=="@minecraft/server") | .version' horizontal-check/bp/manifest.json)" = "2.12.0-beta.1.26.60-preview.25"
+          test "$(jq -r '.dependencies[] | select(.module_name=="@minecraft/server-ui") | .version' horizontal-check/bp/manifest.json)" = "2.1.0"
+          test "$(jq -r '.dependencies[] | select(.module_name=="@minecraft/server") | .version' horizontal-check/bp/manifest.json)" = "2.9.0"
+          test "$(jq -r '.header.min_engine_version | join(".")' horizontal-check/bp/manifest.json)" != "1.26.60"
+          ! grep -Fq '1.26.60-preview' horizontal-check/bp/manifest.json
           test "$(jq -r '.dependencies[] | select(.uuid=="472b0285-0ae2-4192-81be-576adbba30d3") | .version | join(".")' horizontal-check/bp/manifest.json)" = "2.5.1"
 
           script=horizontal-check/bp/scripts/main.js
-          test "$(grep -Fc '.multiButtonRow([' "$script")" -eq 2
+          grep -Fq 'typeof form.multiButtonRow === "function"' "$script"
+          grep -Fq 'form.multiButtonRow(buttons)' "$script"
+          grep -Fq 'const modeHorizontal = addButtonRowCompat(' "$script"
+          grep -Fq 'const rangeHorizontal = addButtonRowCompat(' "$script"
+          grep -Fq 'HORIZONTAL_UNAVAILABLE' "$script"
+          grep -Fq 'using vertical fallback' "$script"
           grep -Fq 'label: "Hold-to-Talk"' "$script"
           grep -Fq 'label: "Toggle"' "$script"
           grep -Fq 'label: "5 บล็อก"' "$script"
@@ -88,11 +95,7 @@ jobs:
           grep -Fq 'options: { disabled: toggleDisabled }' "$script"
           grep -Fq 'Loaded v2.5.1-beta' "$script"
 
-          ! grep -Fq '.button("Hold-to-Talk",' "$script"
-          ! grep -Fq '.button("Toggle",' "$script"
-          ! grep -Fq '.button("5 บล็อก",' "$script"
-          ! grep -Fq '.button("10 บล็อก",' "$script"
-          ! grep -Fq '.button("20 บล็อก",' "$script"
+          grep -Fq 'form.button(button.label, button.onClick, button.options)' "$script"
 
           test -s horizontal-check/rp/attachables/mic_off.entity.json
           test -s horizontal-check/rp/attachables/mic_on.entity.json
