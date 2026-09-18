@@ -73,8 +73,10 @@ jobs:
           grep -Fq 'MIC_DUPLICATE_REMOVED' "$script"
           grep -Fq 'voicecraft.vr.request.' "$script"
           grep -Fq 'เลือกรูปแบบการเปิดและปิดไมค์' "$script"
-          grep -Fq 'Hold-to-Talk\\nถือ Mic เพื่อเปิดไมค์' "$script"
-          grep -Fq 'Toggle\\nถือ Mic หนึ่งครั้งเพื่อเปิดไมค์' "$script"
+          grep -Fq 'Hold-to-Talk' "$script"
+          grep -Fq 'ถือ Mic เพื่อเปิดไมค์' "$script"
+          grep -Fq 'Toggle' "$script"
+          grep -Fq 'ถือ Mic หนึ่งครั้งเพื่อเปิดไมค์' "$script"
           grep -Fq 'ปรับระยะที่เสียงของคุณจะส่งไปถึงผู้เล่นอื่นได้จากตรงนี้' "$script"
 
           ! grep -Fq 'ActionFormData' "$script"
