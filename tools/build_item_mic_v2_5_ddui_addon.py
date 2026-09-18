@@ -12,7 +12,7 @@ from PIL import Image
 import build_item_mic_addon as base
 import build_item_mic_voice_range_addon as vr
 
-VERSION = [2, 5, 0]
+VERSION = [2, 5, 1]
 
 MIC_IDS = (
     "voicecraft:mic_off",
@@ -70,7 +70,7 @@ def patch_ddui(js: str) -> str:
       reassertMicFlags(player);
       const refreshed = stateFor(player);
       statusText.setData(`สถานะไมค์: ${refreshed.effective ? "§aON" : "§cOFF"}§r`);
-      modeText.setData(`โหมดปัจจุบัน: §e${modeLabel(refreshed.mode)}§r`);
+      modeText.setData(`โหมด: §e${modeUiLabel(refreshed.mode)}§r`);
       holdDisabled.setData(refreshed.mode === MODE_HOLD);
       toggleDisabled.setData(refreshed.mode === MODE_TOGGLE);
     } catch (e) {
@@ -88,6 +88,10 @@ function applyVoiceRangeFromUi(player, value, rangeText, customRange) {
   player.sendMessage(`§e[VoiceCraft] ส่งคำขอตั้งระยะเสียง ${value} บล็อกไปยังเซิร์ฟเวอร์แล้ว§r`);
 }
 
+function modeUiLabel(mode) {
+  return mode === MODE_TOGGLE ? "Toggle" : "Hold-to-Talk";
+}
+
 async function showSettings(player) {
   ensureMic(player);
   evaluate(player);
@@ -98,7 +102,7 @@ async function showSettings(player) {
     `สถานะไมค์: ${initial.effective ? "§aON" : "§cOFF"}§r`
   );
   const modeText = new ObservableString(
-    `โหมดปัจจุบัน: §e${modeLabel(initial.mode)}§r`
+    `โหมด: §e${modeUiLabel(initial.mode)}§r`
   );
   const rangeText = new ObservableString(
     `ระยะเสียง: §b${currentVoiceRange(player)} บล็อก§r`
@@ -110,7 +114,7 @@ async function showSettings(player) {
   );
   const serverLimitText = new ObservableString(
     isOperator(player)
-      ? "สิทธิ์ระยะเสียง: §dOperator — ไม่จำกัดโดย Max ของเซิร์ฟเวอร์§r"
+      ? "สิทธิ์: §dOperator — ไม่จำกัด§r"
       : `ระยะสูงสุด: §b${currentMaxRange(player)} บล็อก§r`
   );
   const holdDisabled = new ObservableBoolean(initial.mode === MODE_HOLD);
@@ -120,11 +124,14 @@ async function showSettings(player) {
   });
 
   const form = new CustomForm(player, "VoiceCraft • Mic Settings")
-    .header("VoiceCraft Voice Chat")
     .label(statusText)
+    .spacer()
     .label(modeText)
+    .spacer()
     .label(rangeText)
+    .spacer()
     .label(offhandText)
+    .spacer()
     .label(serverLimitText)
     .spacer()
     .divider()
@@ -166,7 +173,6 @@ async function showSettings(player) {
       applyVoiceRangeFromUi(player, customRange.getData(), rangeText, customRange);
     })
     .spacer()
-    .label("DDUI อัปเดตสถานะบนหน้าจอนี้แบบ real-time โดยไม่ต้องปิดเมนู")
     .closeButton();
 
   const refreshId = system.runInterval(() => {
@@ -177,7 +183,7 @@ async function showSettings(player) {
         `สถานะไมค์: ${refreshed.effective ? "§aON" : "§cOFF"}§r`
       );
       modeText.setData(
-        `โหมดปัจจุบัน: §e${modeLabel(refreshed.mode)}§r`
+        `โหมด: §e${modeUiLabel(refreshed.mode)}§r`
       );
       rangeText.setData(
         `ระยะเสียง: §b${currentVoiceRange(player)} บล็อก§r`
@@ -208,7 +214,6 @@ async function showSettings(player) {
         'ObservableBoolean',
         'ObservableString',
         'new CustomForm(player, "VoiceCraft • Mic Settings")',
-        '.header("VoiceCraft Voice Chat")',
         '.textField("กำหนดระยะเอง (บล็อก)", customRange)',
         '.closeButton()',
         'await form.show()',
@@ -218,7 +223,7 @@ async function showSettings(player) {
     ]
     missing = [value for value in required if value not in js]
     if missing:
-        raise RuntimeError(f"Item Mic 2.5 DDUI patch failed: {missing}")
+        raise RuntimeError(f"Item Mic 2.5.1 DDUI patch failed: {missing}")
 
     forbidden = [
         "ActionFormData",
@@ -226,6 +231,8 @@ async function showSettings(player) {
         ".show(player)",
         "response.selection",
         "response.formValues",
+        "VoiceCraft Voice Chat",
+        "DDUI อัปเดตสถานะบนหน้าจอนี้แบบ real-time โดยไม่ต้องปิดเมนู",
     ]
     leftovers = [value for value in forbidden if value in js]
     if leftovers:
@@ -286,7 +293,7 @@ function hasAnyMic(player) {
 }
 '''
     if anchor not in js:
-        raise RuntimeError("Item Mic 2.5 patch anchor missing: hasAnyMic")
+        raise RuntimeError("Item Mic 2.5.1 patch anchor missing: hasAnyMic")
     js = js.replace(anchor, replacement, 1)
 
     js = js.replace(
@@ -315,7 +322,7 @@ function hasAnyMic(player) {
 
     js = js.replace(
         '[VoiceCraftItem/BP] Loaded v2.3.0 — Mic modes + server-authoritative Voice Range',
-        '[VoiceCraftItem/BP] Loaded v2.5.0 — DDUI + hidden held model + single Mic enforcement + Voice Range',
+        '[VoiceCraftItem/BP] Loaded v2.5.1 — DDUI layout polish + hidden held model + single Mic enforcement + Voice Range',
         1,
     )
 
@@ -324,14 +331,14 @@ function hasAnyMic(player) {
         "MIC_DUPLICATE_REMOVED",
         "selectedSlotIndex",
         "inv.setItem(i, undefined)",
-        "Loaded v2.5.0",
+        "Loaded v2.5.1",
         "voicecraft.vr.request.",
         "CustomForm",
         "ObservableString",
     ]
     missing = [value for value in required if value not in js]
     if missing:
-        raise RuntimeError(f"Item Mic 2.5 script patch failed: {missing}")
+        raise RuntimeError(f"Item Mic 2.5.1 script patch failed: {missing}")
     return js
 
 
@@ -392,7 +399,7 @@ INVISIBLE_RENDER_CONTROLLER = '''{
 
 def main() -> None:
     repo = Path(sys.argv[1] if len(sys.argv) > 1 else ".").resolve()
-    output = Path(sys.argv[2] if len(sys.argv) > 2 else "release-assets/VoiceCraft_ItemMic_v2.5.0_DDUI.mcaddon")
+    output = Path(sys.argv[2] if len(sys.argv) > 2 else "release-assets/VoiceCraft_ItemMic_v2.5.1_DDUI.mcaddon")
     if not output.is_absolute():
         output = repo / output
 
@@ -403,13 +410,13 @@ def main() -> None:
     files = dict(base.TEXT_FILES)
     files["BP/manifest.json"] = patch_manifest(
         files["BP/manifest.json"],
-        "VoiceCraft Item Mic BP v2.5 DDUI",
+        "VoiceCraft Item Mic BP v2.5.1 DDUI",
         "Modern DDUI Mic settings, Hold/Toggle modes, offhand always-on, Voice Range and single hidden Mic.",
     )
     files["RP/manifest.json"] = patch_manifest(
         files["RP/manifest.json"],
-        "VoiceCraft Mic Icons RP v2.5",
-        "Inventory icons plus invisible held Mic model for VoiceCraft Item Mic v2.5 DDUI.",
+        "VoiceCraft Mic Icons RP v2.5.1",
+        "Inventory icons plus invisible held Mic model for VoiceCraft Item Mic v2.5.1 DDUI.",
     )
 
     for path in (
@@ -430,7 +437,7 @@ def main() -> None:
     files["RP/attachables/mic_toggle.entity.json"] = attachable("voicecraft:mic_toggle")
 
     output.parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.TemporaryDirectory(prefix="voicecraft-itemmic-2.5-ddui-") as td:
+    with tempfile.TemporaryDirectory(prefix="voicecraft-itemmic-2.5.1-ddui-") as td:
         tmp = Path(td)
         bp = tmp / "BP"
         rp = tmp / "RP"
@@ -453,8 +460,8 @@ def main() -> None:
             rgba.save(bp / "pack_icon.png", "PNG")
             rgba.save(rp / "pack_icon.png", "PNG")
 
-        rp_pack = tmp / "VoiceCraft_ItemMic_RP_v2.5.0.mcpack"
-        bp_pack = tmp / "VoiceCraft_ItemMic_BP_v2.5.0.mcpack"
+        rp_pack = tmp / "VoiceCraft_ItemMic_RP_v2.5.1.mcpack"
+        bp_pack = tmp / "VoiceCraft_ItemMic_BP_v2.5.1.mcpack"
         base.zip_dir(rp, rp_pack)
         base.zip_dir(bp, bp_pack)
         with zipfile.ZipFile(output, "w", zipfile.ZIP_DEFLATED) as zf:
