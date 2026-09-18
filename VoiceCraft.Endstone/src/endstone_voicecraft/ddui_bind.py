@@ -87,6 +87,7 @@ class VoiceCraftEndstone(VoiceCraftEndstone028):
             BIND_REQUEST_PREFIX,
             BIND_ERROR_PREFIX,
             BIND_UI_CLOSED_PREFIX,
+            BIND_DDUI_READY_TAG,
         )
 
         super().handle_player_join(player)
@@ -103,6 +104,7 @@ class VoiceCraftEndstone(VoiceCraftEndstone028):
             BIND_REQUEST_PREFIX,
             BIND_ERROR_PREFIX,
             BIND_UI_CLOSED_PREFIX,
+            BIND_DDUI_READY_TAG,
         )
         super().handle_player_quit(player)
 
