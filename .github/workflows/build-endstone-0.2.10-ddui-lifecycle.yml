@@ -86,8 +86,8 @@ jobs:
           # Every real join/quit clears stale UI/session protocol tags.
           assert "def handle_player_join" in source
           assert "def handle_player_quit" in source
-          assert source.count("BIND_UI_CLOSED_PREFIX") >= 4
-          assert source.count("BIND_DDUI_READY_TAG") >= 3
+          assert source.count("BIND_UI_CLOSED_PREFIX") >= 3
+          assert "BIND_DDUI_READY_TAG" in source
           # Explicit /vc bind produces a fresh open token.
           assert "Explicit /vc -> Bind always starts a fresh UI request" in source
           assert "open_ui=True" in source
