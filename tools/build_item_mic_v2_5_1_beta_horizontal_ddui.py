@@ -13,8 +13,8 @@ import build_item_mic_addon as base
 import build_item_mic_v2_5_ddui_addon as stable
 
 VERSION = [2, 5, 1]
-SERVER_UI_BETA = "2.4.0-beta.1.26.60-preview.25"
-SERVER_BETA = "2.12.0-beta.1.26.60-preview.25"
+SERVER_UI_VERSION = "2.1.0"
+SERVER_VERSION = "2.9.0"
 
 BP_HEADER_UUID = "46951783-7b21-4d1e-9ed9-5165a18291e7"
 BP_DATA_MODULE_UUID = "02d3164f-688b-4f01-a6d4-a06928235595"
@@ -26,13 +26,11 @@ RP_MODULE_UUID = "a4579a61-8320-4c40-9c34-4d068d0408be"
 def patch_manifest(text: str, pack: str) -> str:
     data = json.loads(text)
     data["header"]["version"] = VERSION
-    data["header"]["min_engine_version"] = [1, 26, 60]
-
     if pack == "BP":
         data["header"]["name"] = "VoiceCraft Item Mic BP v2.5.1-beta Horizontal DDUI"
         data["header"]["description"] = (
-            "Experimental horizontal DDUI using multiButtonRow. "
-            "Preview/Beta build; keep separate from the stable Item Mic pack."
+            "Horizontal DDUI compatibility test for the current Minecraft version. "
+            "Uses stable module dependencies and falls back if multiButtonRow is unavailable."
         )
         data["header"]["uuid"] = BP_HEADER_UUID
 
@@ -45,16 +43,16 @@ def patch_manifest(text: str, pack: str) -> str:
 
         for dependency in data.get("dependencies", []):
             if dependency.get("module_name") == "@minecraft/server":
-                dependency["version"] = SERVER_BETA
+                dependency["version"] = SERVER_VERSION
             elif dependency.get("module_name") == "@minecraft/server-ui":
-                dependency["version"] = SERVER_UI_BETA
+                dependency["version"] = SERVER_UI_VERSION
             elif dependency.get("uuid") == "cb345edb-6e6c-49ac-9950-e2ae07bda214":
                 dependency["uuid"] = RP_HEADER_UUID
                 dependency["version"] = VERSION
     elif pack == "RP":
         data["header"]["name"] = "VoiceCraft Mic Icons RP v2.5.1-beta Horizontal"
         data["header"]["description"] = (
-            "Experimental resource pack for Item Mic v2.5.1-beta Horizontal DDUI."
+            "Resource pack for Item Mic v2.5.1-beta Horizontal current-version compatibility test."
         )
         data["header"]["uuid"] = RP_HEADER_UUID
         for module in data.get("modules", []):
@@ -69,6 +67,27 @@ def patch_manifest(text: str, pack: str) -> str:
 
 def patch_script(js: str) -> str:
     js = stable.patch_script(js)
+
+    helper_anchor = "async function showSettings(player) {"
+    helper = r'''function addButtonRowCompat(form, buttons, player, rowName) {
+  if (typeof form.multiButtonRow === "function") {
+    form.multiButtonRow(buttons);
+    return true;
+  }
+
+  for (const button of buttons) {
+    form.button(button.label, button.onClick, button.options);
+  }
+  console.warn(
+    `[VoiceCraftItem/BP] HORIZONTAL_UNAVAILABLE player=${player.name} row=${rowName}; using vertical fallback`
+  );
+  return false;
+}
+
+'''
+    if helper_anchor not in js:
+        raise RuntimeError("Horizontal current-version helper anchor missing")
+    js = js.replace(helper_anchor, helper + helper_anchor, 1)
 
     old_mode = r'''.label("Hold-to-Talk\nถือ Mic เพื่อเปิดไมค์ และจะปิดอัตโนมัติเมื่อเปลี่ยนช่องหรือเลิกถือ")
     .button("Hold-to-Talk", () => {
@@ -92,12 +111,30 @@ def patch_script(js: str) -> str:
         holdDisabled,
         toggleDisabled
       );
-    }, { disabled: toggleDisabled })'''
+    }, { disabled: toggleDisabled })
+    .spacer()
+    .divider()
+    .header("Voice Range")
+    .label("ปรับระยะที่เสียงของคุณจะส่งไปถึงผู้เล่นอื่นได้จากตรงนี้")
+    .spacer()
+    .button("5 บล็อก", () => {
+      applyVoiceRangeFromUi(player, 5, rangeText, customRange);
+    })
+    .button("10 บล็อก", () => {
+      applyVoiceRangeFromUi(player, 10, rangeText, customRange);
+    })
+    .button("20 บล็อก", () => {
+      applyVoiceRangeFromUi(player, 20, rangeText, customRange);
+    })
+    .textField("กำหนดระยะเอง (บล็อก)", customRange)'''
 
     new_mode = r'''.label("Hold-to-Talk\nถือ Mic เพื่อเปิดไมค์ และจะปิดอัตโนมัติเมื่อเปลี่ยนช่องหรือเลิกถือ")
     .spacer()
-    .label("Toggle\nถือ Mic หนึ่งครั้งเพื่อเปิดไมค์ จากนั้นเปลี่ยนช่องได้โดยไมค์ยังเปิดอยู่ และถือ Mic อีกครั้งเพื่อปิด")
-    .multiButtonRow([
+    .label("Toggle\nถือ Mic หนึ่งครั้งเพื่อเปิดไมค์ จากนั้นเปลี่ยนช่องได้โดยไมค์ยังเปิดอยู่ และถือ Mic อีกครั้งเพื่อปิด");
+
+  const modeHorizontal = addButtonRowCompat(
+    form,
+    [
       {
         label: "Hold-to-Talk",
         onClick: () => {
@@ -126,23 +163,21 @@ def patch_script(js: str) -> str:
         },
         options: { disabled: toggleDisabled },
       },
-    ])'''
+    ],
+    player,
+    "mic-mode"
+  );
 
-    if old_mode not in js:
-        raise RuntimeError("Horizontal beta patch anchor missing: Mic Mode buttons")
-    js = js.replace(old_mode, new_mode, 1)
+  form
+    .spacer()
+    .divider()
+    .header("Voice Range")
+    .label("ปรับระยะที่เสียงของคุณจะส่งไปถึงผู้เล่นอื่นได้จากตรงนี้")
+    .spacer();
 
-    old_range = r'''.button("5 บล็อก", () => {
-      applyVoiceRangeFromUi(player, 5, rangeText, customRange);
-    })
-    .button("10 บล็อก", () => {
-      applyVoiceRangeFromUi(player, 10, rangeText, customRange);
-    })
-    .button("20 บล็อก", () => {
-      applyVoiceRangeFromUi(player, 20, rangeText, customRange);
-    })'''
-
-    new_range = r'''.multiButtonRow([
+  const rangeHorizontal = addButtonRowCompat(
+    form,
+    [
       {
         label: "5 บล็อก",
         onClick: () => {
@@ -161,20 +196,35 @@ def patch_script(js: str) -> str:
           applyVoiceRangeFromUi(player, 20, rangeText, customRange);
         },
       },
-    ])'''
+    ],
+    player,
+    "voice-range"
+  );
 
-    if old_range not in js:
-        raise RuntimeError("Horizontal beta patch anchor missing: Voice Range buttons")
-    js = js.replace(old_range, new_range, 1)
+  if (!modeHorizontal || !rangeHorizontal) {
+    player.sendMessage(
+      "§e[VoiceCraft Beta] Minecraft เวอร์ชันนี้ยังไม่เปิด multiButtonRow — ใช้ปุ่มแนวตั้งแทน§r"
+    );
+  }
+
+  form
+    .textField("กำหนดระยะเอง (บล็อก)", customRange)'''
+
+    if old_mode not in js:
+        raise RuntimeError("Horizontal current-version patch anchor missing")
+    js = js.replace(old_mode, new_mode, 1)
 
     js = js.replace(
         "[VoiceCraftItem/BP] Loaded v2.5.2 — DDUI help text + hidden held model + single Mic enforcement + Voice Range",
-        "[VoiceCraftItem/BP] Loaded v2.5.1-beta — Horizontal DDUI multiButtonRow + Voice Range",
+        "[VoiceCraftItem/BP] Loaded v2.5.1-beta — Horizontal DDUI current-version compatibility test",
         1,
     )
 
     required = [
-        ".multiButtonRow([",
+        "function addButtonRowCompat",
+        'typeof form.multiButtonRow === "function"',
+        "form.multiButtonRow(buttons)",
+        'rowName',
         'label: "Hold-to-Talk"',
         'label: "Toggle"',
         'label: "5 บล็อก"',
@@ -182,26 +232,15 @@ def patch_script(js: str) -> str:
         'label: "20 บล็อก"',
         "options: { disabled: holdDisabled }",
         "options: { disabled: toggleDisabled }",
+        "modeHorizontal",
+        "rangeHorizontal",
+        "HORIZONTAL_UNAVAILABLE",
+        "Minecraft เวอร์ชันนี้ยังไม่เปิด multiButtonRow",
         "Loaded v2.5.1-beta",
-        "CustomForm",
-        "ObservableBoolean",
-        "voicecraft.vr.request.",
     ]
     missing = [value for value in required if value not in js]
     if missing:
-        raise RuntimeError(f"Horizontal beta DDUI patch failed: {missing}")
-
-    # Stable vertical buttons must be gone for the two horizontal groups.
-    forbidden = [
-        '.button("Hold-to-Talk",',
-        '.button("Toggle",',
-        '.button("5 บล็อก",',
-        '.button("10 บล็อก",',
-        '.button("20 บล็อก",',
-    ]
-    leftovers = [value for value in forbidden if value in js]
-    if leftovers:
-        raise RuntimeError(f"Vertical button API remains in horizontal beta: {leftovers}")
+        raise RuntimeError(f"Horizontal current-version DDUI patch failed: {missing}")
 
     return js
 
