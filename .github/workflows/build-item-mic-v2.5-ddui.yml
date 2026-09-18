@@ -1,4 +1,4 @@
-name: Build Item Mic 2.5.1 DDUI
+name: Build Item Mic 2.5.2 DDUI
 
 on:
   push:
@@ -39,12 +39,12 @@ jobs:
           set -euo pipefail
           python -m py_compile             tools/build_item_mic_addon.py             tools/build_item_mic_voice_range_addon.py             tools/build_item_mic_v2_5_ddui_addon.py
 
-      - name: Build Item Mic 2.5.1 DDUI
+      - name: Build Item Mic 2.5.2 DDUI
         run: |
           set -euo pipefail
           mkdir -p test-assets
-          python tools/build_item_mic_v2_5_ddui_addon.py             .             test-assets/VoiceCraft_ItemMic_v2.5.1_DDUI.mcaddon
-          test -s test-assets/VoiceCraft_ItemMic_v2.5.1_DDUI.mcaddon
+          python tools/build_item_mic_v2_5_ddui_addon.py             .             test-assets/VoiceCraft_ItemMic_v2.5.2_DDUI.mcaddon
+          test -s test-assets/VoiceCraft_ItemMic_v2.5.2_DDUI.mcaddon
 
       - name: Validate DDUI package
         shell: bash
@@ -52,14 +52,14 @@ jobs:
           set -euo pipefail
           rm -rf itemmic-ddui-check
           mkdir -p itemmic-ddui-check/top itemmic-ddui-check/bp itemmic-ddui-check/rp
-          unzip -q test-assets/VoiceCraft_ItemMic_v2.5.1_DDUI.mcaddon -d itemmic-ddui-check/top
-          test -s itemmic-ddui-check/top/VoiceCraft_ItemMic_BP_v2.5.1.mcpack
-          test -s itemmic-ddui-check/top/VoiceCraft_ItemMic_RP_v2.5.1.mcpack
-          unzip -q itemmic-ddui-check/top/VoiceCraft_ItemMic_BP_v2.5.1.mcpack -d itemmic-ddui-check/bp
-          unzip -q itemmic-ddui-check/top/VoiceCraft_ItemMic_RP_v2.5.1.mcpack -d itemmic-ddui-check/rp
+          unzip -q test-assets/VoiceCraft_ItemMic_v2.5.2_DDUI.mcaddon -d itemmic-ddui-check/top
+          test -s itemmic-ddui-check/top/VoiceCraft_ItemMic_BP_v2.5.2.mcpack
+          test -s itemmic-ddui-check/top/VoiceCraft_ItemMic_RP_v2.5.2.mcpack
+          unzip -q itemmic-ddui-check/top/VoiceCraft_ItemMic_BP_v2.5.2.mcpack -d itemmic-ddui-check/bp
+          unzip -q itemmic-ddui-check/top/VoiceCraft_ItemMic_RP_v2.5.2.mcpack -d itemmic-ddui-check/rp
 
-          test "$(jq -r '.header.version | join(".")' itemmic-ddui-check/bp/manifest.json)" = "2.5.1"
-          test "$(jq -r '.header.version | join(".")' itemmic-ddui-check/rp/manifest.json)" = "2.5.1"
+          test "$(jq -r '.header.version | join(".")' itemmic-ddui-check/bp/manifest.json)" = "2.5.2"
+          test "$(jq -r '.header.version | join(".")' itemmic-ddui-check/rp/manifest.json)" = "2.5.2"
           test "$(jq -r '.dependencies[] | select(.module_name=="@minecraft/server-ui") | .version' itemmic-ddui-check/bp/manifest.json)" = "2.1.0"
 
           script=itemmic-ddui-check/bp/scripts/main.js
@@ -69,9 +69,13 @@ jobs:
           grep -Fq 'new CustomForm(player, "VoiceCraft • Mic Settings")' "$script"
                     grep -Fq '.textField("กำหนดระยะเอง (บล็อก)", customRange)' "$script"
           grep -Fq 'await form.show()' "$script"
-          grep -Fq 'Loaded v2.5.1' "$script"
+          grep -Fq 'Loaded v2.5.2' "$script"
           grep -Fq 'MIC_DUPLICATE_REMOVED' "$script"
           grep -Fq 'voicecraft.vr.request.' "$script"
+          grep -Fq 'เลือกรูปแบบการเปิดและปิดไมค์' "$script"
+          grep -Fq 'Hold-to-Talk\\nถือ Mic เพื่อเปิดไมค์' "$script"
+          grep -Fq 'Toggle\\nถือ Mic หนึ่งครั้งเพื่อเปิดไมค์' "$script"
+          grep -Fq 'ปรับระยะที่เสียงของคุณจะส่งไปถึงผู้เล่นอื่นได้จากตรงนี้' "$script"
 
           ! grep -Fq 'ActionFormData' "$script"
           ! grep -Fq 'ModalFormData' "$script"
@@ -88,6 +92,6 @@ jobs:
       - name: Upload Item Mic 2.5 DDUI test addon
         uses: actions/upload-artifact@v4
         with:
-          name: VoiceCraft-ItemMic-v2.5.1-DDUI-Test
+          name: VoiceCraft-ItemMic-v2.5.2-DDUI-Test
           if-no-files-found: error
-          path: test-assets/VoiceCraft_ItemMic_v2.5.1_DDUI.mcaddon
+          path: test-assets/VoiceCraft_ItemMic_v2.5.2_DDUI.mcaddon
