@@ -67,7 +67,7 @@ jobs:
           grep -Fq 'ObservableBoolean' "$script"
           grep -Fq 'ObservableString' "$script"
           grep -Fq 'new CustomForm(player, "VoiceCraft • Mic Settings")' "$script"
-                    grep -Fq '.textField("กำหนดระยะเอง (บล็อก)", customRange)' "$script"
+          grep -Fq '.textField("กำหนดระยะเอง (บล็อก)", customRange)' "$script"
           grep -Fq 'await form.show()' "$script"
           grep -Fq 'Loaded v2.5.2' "$script"
           grep -Fq 'MIC_DUPLICATE_REMOVED' "$script"
@@ -89,7 +89,7 @@ jobs:
           test -s itemmic-ddui-check/rp/attachables/mic_on.entity.json
           test -s itemmic-ddui-check/rp/models/entity/voicecraft_mic_invisible.geo.json
 
-      - name: Upload Item Mic 2.5 DDUI test addon
+      - name: Upload Item Mic 2.5.2 DDUI test addon
         uses: actions/upload-artifact@v4
         with:
           name: VoiceCraft-ItemMic-v2.5.2-DDUI-Test
