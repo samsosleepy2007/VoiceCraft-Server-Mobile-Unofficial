@@ -219,9 +219,12 @@ async function showSettings(player) {
       .header("Reset")
       .label("คืนค่า Mic Mode เป็น Hold-to-Talk และ Voice Range เป็น 20 บล็อก")
       .button("คืนค่าเริ่มต้น", () => {
+        const resetRange = isOperator(player)
+          ? 20
+          : Math.min(20, sliderMax.getData());
         advancedVisible.setData(false);
-        customRange.setData("20");
-        rangeSlider.setData(Math.min(20, sliderMax.getData()));
+        customRange.setData(String(resetRange));
+        rangeSlider.setData(Math.min(resetRange, sliderMax.getData()));
         applyMicModeFromUi(
           player,
           MODE_HOLD,
@@ -230,7 +233,7 @@ async function showSettings(player) {
           holdDisabled,
           toggleDisabled
         );
-        submitRange(20);
+        submitRange(resetRange);
       })
       .spacer()
       .closeButton();
@@ -240,6 +243,11 @@ async function showSettings(player) {
         syncVoiceRangeFromServer(player);
         const refreshed = stateFor(player);
         const actualRange = currentVoiceRange(player);
+        const confirmedServerRange = readTaggedNumber(
+          player,
+          RANGE_VALUE_PREFIX,
+          0
+        );
         const nextMax = Math.max(1, currentMaxRange(player));
 
         statusText.setData(
@@ -271,13 +279,13 @@ async function showSettings(player) {
         sliderMax.setData(nextMax);
 
         if (pendingRange !== null) {
-          if (actualRange === pendingRange) {
+          if (confirmedServerRange === pendingRange) {
             rangeConfirmText.setData(
-              `สถานะระยะเสียง: §aเซิร์ฟเวอร์ยืนยันแล้ว — ${actualRange} บล็อก§r`
+              `สถานะระยะเสียง: §aเซิร์ฟเวอร์ยืนยันแล้ว — ${confirmedServerRange} บล็อก§r`
             );
-            customRange.setData(String(actualRange));
-            if (actualRange <= nextMax) {
-              rangeSlider.setData(actualRange);
+            customRange.setData(String(confirmedServerRange));
+            if (confirmedServerRange <= nextMax) {
+              rangeSlider.setData(confirmedServerRange);
             }
             pendingRange = null;
             pendingChecks = 0;
@@ -328,6 +336,10 @@ async function showSettings(player) {
         '"ใช้ระยะจาก Slider"',
         '"คืนค่าเริ่มต้น"',
         "pendingRange",
+        "confirmedServerRange",
+        "readTaggedNumber",
+        "RANGE_VALUE_PREFIX",
+        "resetRange",
         "เซิร์ฟเวอร์ยืนยันแล้ว",
         "ยังไม่ได้รับการยืนยัน",
         "Loaded v2.5.3",
