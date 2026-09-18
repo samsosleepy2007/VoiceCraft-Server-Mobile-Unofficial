@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "endstone-voicecraft"
-version = "0.2.8"
-description = "VoiceCraft Endstone player-state, binding, multi-relay, Item Mic and outgoing voice range bridge for VoiceCraft Server Mobile"
+version = "0.2.9"
+description = "VoiceCraft Endstone player-state, DDUI binding, auto rebind, multi-relay, Item Mic and outgoing voice range bridge for VoiceCraft Server Mobile"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = ["aiohttp>=3.9"]
