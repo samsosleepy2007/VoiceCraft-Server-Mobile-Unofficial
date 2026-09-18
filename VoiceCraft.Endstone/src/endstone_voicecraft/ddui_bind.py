@@ -12,6 +12,7 @@ BIND_STATE_PREFIX = "voicecraft.bind.state."
 BIND_OPEN_PREFIX = "voicecraft.bind.open."
 BIND_REQUEST_PREFIX = "voicecraft.bind.request."
 BIND_ERROR_PREFIX = "voicecraft.bind.error."
+BIND_UI_CLOSED_PREFIX = "voicecraft.bind.ui.closed."
 
 STATE_UNBOUND = "unbound"
 STATE_PENDING = "pending"
@@ -23,13 +24,13 @@ STATE_DISCONNECTING = "disconnecting"
 
 
 class VoiceCraftEndstone(VoiceCraftEndstone028):
-    """Endstone 0.2.9: DDUI binding bridge with reconnect/rebind state."""
+    """Endstone 0.2.10: DDUI binding lifecycle, reconnect and rebind state."""
 
     prefix = "VoiceCraftEndstone"
-    version = "0.2.9"
+    version = "0.2.10"
     api_version = "0.11"
     description = (
-        "VoiceCraft binding, DDUI bind flow, auto rebind, failover, Item Mic "
+        "VoiceCraft binding, DDUI lifecycle, auto rebind, failover, Item Mic "
         "and per-player voice range"
     )
     authors = ["SamSoSleepy"]
@@ -71,8 +72,39 @@ class VoiceCraftEndstone(VoiceCraftEndstone028):
         )
 
     def handle_player_join(self, player: Player) -> None:
+        player_key = self._player_key(player)
+
+        # Treat every real Minecraft join as a fresh DDUI binding session.
+        # VoiceCraft Server releases the entity binding on player_leave, so a
+        # returning player must receive a new Binding Key form even if stale
+        # scoreboard UI tags survived the previous session.
+        self._rebind_waiting.discard(player_key)
+        self._auto_bind_shown.discard(player_key)
+        self._remove_prefixed_tags(
+            player,
+            BIND_STATE_PREFIX,
+            BIND_OPEN_PREFIX,
+            BIND_REQUEST_PREFIX,
+            BIND_ERROR_PREFIX,
+            BIND_UI_CLOSED_PREFIX,
+        )
+
         super().handle_player_join(player)
         self._publish_bind_state(player, STATE_UNBOUND)
+
+    def handle_player_quit(self, player: Player) -> None:
+        player_key = self._player_key(player)
+        self._rebind_waiting.discard(player_key)
+        self._auto_bind_shown.discard(player_key)
+        self._remove_prefixed_tags(
+            player,
+            BIND_STATE_PREFIX,
+            BIND_OPEN_PREFIX,
+            BIND_REQUEST_PREFIX,
+            BIND_ERROR_PREFIX,
+            BIND_UI_CLOSED_PREFIX,
+        )
+        super().handle_player_quit(player)
 
     def _has_bind_ddui(self, player: Player) -> bool:
         try:
@@ -210,6 +242,9 @@ class VoiceCraftEndstone(VoiceCraftEndstone028):
             return
 
         if self._has_bind_ddui(player):
+            # Explicit /vc -> Bind always starts a fresh UI request, even if a
+            # previous DDUI was dismissed with X.
+            self._auto_bind_shown.discard(player_key)
             self._auto_bind_shown.add(player_key)
             self._publish_bind_state(player, STATE_UNBOUND, open_ui=True)
             return
@@ -377,6 +412,31 @@ class VoiceCraftEndstone(VoiceCraftEndstone028):
         for player in self.server.online_players:
             try:
                 tags = tuple(player.scoreboard_tags)
+                player_key = self._player_key(player)
+
+                closed_events = [
+                    tag for tag in tags if tag.startswith(BIND_UI_CLOSED_PREFIX)
+                ]
+                if closed_events:
+                    for tag in closed_events:
+                        player.remove_scoreboard_tag(tag)
+
+                    # A client-side X dismissal must release the Endstone UI
+                    # latch so /vc can request another DDUI immediately. Do
+                    # not reopen automatically; the player explicitly closed
+                    # it. Pending/bound states remain authoritative.
+                    self._auto_bind_shown.discard(player_key)
+                    if (
+                        player_key not in self._bound_players
+                        and player_key not in self._pending_bind_keys
+                        and player_key not in self._rebind_waiting
+                    ):
+                        self._publish_bind_state(player, STATE_UNBOUND)
+                    self.logger.info(
+                        f"BIND DDUI closed by player={player.name}; reopen available via /vc"
+                    )
+                    tags = tuple(player.scoreboard_tags)
+
                 requests = [
                     tag for tag in tags if tag.startswith(BIND_REQUEST_PREFIX)
                 ]
@@ -391,7 +451,6 @@ class VoiceCraftEndstone(VoiceCraftEndstone028):
                         binding_key = value
                     player.remove_scoreboard_tag(tag)
 
-                player_key = self._player_key(player)
                 if player_key in self._bound_players:
                     self._publish_bind_state(player, STATE_BOUND)
                     continue
