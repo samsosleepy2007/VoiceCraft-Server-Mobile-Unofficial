@@ -12,7 +12,7 @@ from PIL import Image
 import build_item_mic_addon as base
 import build_item_mic_voice_range_addon as vr
 
-VERSION = [2, 5, 1]
+VERSION = [2, 5, 2]
 
 MIC_IDS = (
     "voicecraft:mic_off",
@@ -136,6 +136,9 @@ async function showSettings(player) {
     .spacer()
     .divider()
     .header("Mic Mode")
+    .label("เลือกรูปแบบการเปิดและปิดไมค์")
+    .spacer()
+    .label("Hold-to-Talk\nถือ Mic เพื่อเปิดไมค์ และจะปิดอัตโนมัติเมื่อเปลี่ยนช่องหรือเลิกถือ")
     .button("Hold-to-Talk", () => {
       applyMicModeFromUi(
         player,
@@ -146,6 +149,8 @@ async function showSettings(player) {
         toggleDisabled
       );
     }, { disabled: holdDisabled })
+    .spacer()
+    .label("Toggle\nถือ Mic หนึ่งครั้งเพื่อเปิดไมค์ จากนั้นเปลี่ยนช่องได้โดยไมค์ยังเปิดอยู่ และถือ Mic อีกครั้งเพื่อปิด")
     .button("Toggle", () => {
       applyMicModeFromUi(
         player,
@@ -159,6 +164,8 @@ async function showSettings(player) {
     .spacer()
     .divider()
     .header("Voice Range")
+    .label("ปรับระยะที่เสียงของคุณจะส่งไปถึงผู้เล่นอื่นได้จากตรงนี้")
+    .spacer()
     .button("5 บล็อก", () => {
       applyVoiceRangeFromUi(player, 5, rangeText, customRange);
     })
@@ -220,10 +227,14 @@ async function showSettings(player) {
         'system.runInterval',
         'holdDisabled.setData',
         'toggleDisabled.setData',
+        'เลือกรูปแบบการเปิดและปิดไมค์',
+        'Hold-to-Talk\\nถือ Mic เพื่อเปิดไมค์',
+        'Toggle\\nถือ Mic หนึ่งครั้งเพื่อเปิดไมค์',
+        'ปรับระยะที่เสียงของคุณจะส่งไปถึงผู้เล่นอื่นได้จากตรงนี้',
     ]
     missing = [value for value in required if value not in js]
     if missing:
-        raise RuntimeError(f"Item Mic 2.5.1 DDUI patch failed: {missing}")
+        raise RuntimeError(f"Item Mic 2.5.2 DDUI patch failed: {missing}")
 
     forbidden = [
         "ActionFormData",
@@ -293,7 +304,7 @@ function hasAnyMic(player) {
 }
 '''
     if anchor not in js:
-        raise RuntimeError("Item Mic 2.5.1 patch anchor missing: hasAnyMic")
+        raise RuntimeError("Item Mic 2.5.2 patch anchor missing: hasAnyMic")
     js = js.replace(anchor, replacement, 1)
 
     js = js.replace(
@@ -322,7 +333,7 @@ function hasAnyMic(player) {
 
     js = js.replace(
         '[VoiceCraftItem/BP] Loaded v2.3.0 — Mic modes + server-authoritative Voice Range',
-        '[VoiceCraftItem/BP] Loaded v2.5.1 — DDUI layout polish + hidden held model + single Mic enforcement + Voice Range',
+        '[VoiceCraftItem/BP] Loaded v2.5.2 — DDUI help text + hidden held model + single Mic enforcement + Voice Range',
         1,
     )
 
@@ -331,14 +342,14 @@ function hasAnyMic(player) {
         "MIC_DUPLICATE_REMOVED",
         "selectedSlotIndex",
         "inv.setItem(i, undefined)",
-        "Loaded v2.5.1",
+        "Loaded v2.5.2",
         "voicecraft.vr.request.",
         "CustomForm",
         "ObservableString",
     ]
     missing = [value for value in required if value not in js]
     if missing:
-        raise RuntimeError(f"Item Mic 2.5.1 script patch failed: {missing}")
+        raise RuntimeError(f"Item Mic 2.5.2 script patch failed: {missing}")
     return js
 
 
@@ -399,7 +410,7 @@ INVISIBLE_RENDER_CONTROLLER = '''{
 
 def main() -> None:
     repo = Path(sys.argv[1] if len(sys.argv) > 1 else ".").resolve()
-    output = Path(sys.argv[2] if len(sys.argv) > 2 else "release-assets/VoiceCraft_ItemMic_v2.5.1_DDUI.mcaddon")
+    output = Path(sys.argv[2] if len(sys.argv) > 2 else "release-assets/VoiceCraft_ItemMic_v2.5.2_DDUI.mcaddon")
     if not output.is_absolute():
         output = repo / output
 
@@ -410,13 +421,13 @@ def main() -> None:
     files = dict(base.TEXT_FILES)
     files["BP/manifest.json"] = patch_manifest(
         files["BP/manifest.json"],
-        "VoiceCraft Item Mic BP v2.5.1 DDUI",
+        "VoiceCraft Item Mic BP v2.5.2 DDUI",
         "Modern DDUI Mic settings, Hold/Toggle modes, offhand always-on, Voice Range and single hidden Mic.",
     )
     files["RP/manifest.json"] = patch_manifest(
         files["RP/manifest.json"],
-        "VoiceCraft Mic Icons RP v2.5.1",
-        "Inventory icons plus invisible held Mic model for VoiceCraft Item Mic v2.5.1 DDUI.",
+        "VoiceCraft Mic Icons RP v2.5.2",
+        "Inventory icons plus invisible held Mic model for VoiceCraft Item Mic v2.5.2 DDUI.",
     )
 
     for path in (
@@ -437,7 +448,7 @@ def main() -> None:
     files["RP/attachables/mic_toggle.entity.json"] = attachable("voicecraft:mic_toggle")
 
     output.parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.TemporaryDirectory(prefix="voicecraft-itemmic-2.5.1-ddui-") as td:
+    with tempfile.TemporaryDirectory(prefix="voicecraft-itemmic-2.5.2-ddui-") as td:
         tmp = Path(td)
         bp = tmp / "BP"
         rp = tmp / "RP"
@@ -460,8 +471,8 @@ def main() -> None:
             rgba.save(bp / "pack_icon.png", "PNG")
             rgba.save(rp / "pack_icon.png", "PNG")
 
-        rp_pack = tmp / "VoiceCraft_ItemMic_RP_v2.5.1.mcpack"
-        bp_pack = tmp / "VoiceCraft_ItemMic_BP_v2.5.1.mcpack"
+        rp_pack = tmp / "VoiceCraft_ItemMic_RP_v2.5.2.mcpack"
+        bp_pack = tmp / "VoiceCraft_ItemMic_BP_v2.5.2.mcpack"
         base.zip_dir(rp, rp_pack)
         base.zip_dir(bp, bp_pack)
         with zipfile.ZipFile(output, "w", zipfile.ZIP_DEFLATED) as zf:
