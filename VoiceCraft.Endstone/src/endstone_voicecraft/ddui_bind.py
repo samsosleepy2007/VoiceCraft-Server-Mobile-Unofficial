@@ -25,10 +25,10 @@ STATE_DISCONNECTING = "disconnecting"
 
 
 class VoiceCraftEndstone(VoiceCraftEndstone028):
-    """Endstone 0.2.12: direct Mic Bind support plus explicit reconnect/rebind state."""
+    """Endstone 0.2.13: direct Mic Bind support with concise reconnect messages."""
 
     prefix = "VoiceCraftEndstone"
-    version = "0.2.12"
+    version = "0.2.13"
     api_version = "0.11"
     description = (
         "VoiceCraft binding, direct Mic Bind, explicit reconnect/rebind state, failover, "
@@ -292,7 +292,7 @@ class VoiceCraftEndstone(VoiceCraftEndstone028):
                 )
                 return
             player.send_message(
-                "§e[VoiceCraft] กำลังเชื่อมต่อ VoiceCraft กลับอัตโนมัติ กรุณารอสักครู่...§r"
+                "§e[ViceCraft] หลุดการเชื่อมต่อ กำลังเชื่อมต่อใหม่§r"
             )
             return
 
@@ -395,8 +395,7 @@ class VoiceCraftEndstone(VoiceCraftEndstone028):
 
         self._publish_bind_state(player, STATE_RECONNECTING)
         player.send_message(
-            "§e[VoiceCraft] การเชื่อมต่อไมค์หลุด กำลังพยายามเชื่อมต่อกลับอัตโนมัติ... "
-            "หากยังเชื่อมต่อไม่ได้ ให้กดใช้ไอเทม Mic เพื่อเชื่อมต่ออีกครั้ง§r"
+            "§e[ViceCraft] หลุดการเชื่อมต่อ กำลังเชื่อมต่อใหม่§r"
         )
         self.logger.info(
             f"VOICE DISCONNECT player={player.name} xuid={player.xuid}; "
@@ -417,8 +416,7 @@ class VoiceCraftEndstone(VoiceCraftEndstone028):
                 STATE_REBIND_REQUIRED,
             )
             online.send_message(
-                "§e[VoiceCraft] ยังเชื่อมต่อกลับไม่ได้ กรุณาเชื่อมต่อเซิร์ฟเวอร์ไมค์ใน VoiceCraft "
-                "แล้วกดใช้ไอเทม Mic เพื่อกรอก Binding Key ใหม่ หรือใช้ /vc > Bind Microphone§r"
+                "§e[ViceCraft] ไม่สามารถเชื่อมต่อได้ใช้ไอเทมไมค์เพื่อเชื่อมต่ออีกครั้ง§r"
             )
 
         try:
