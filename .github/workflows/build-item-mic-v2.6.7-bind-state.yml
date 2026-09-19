@@ -1,0 +1,159 @@
+name: Build Item Mic 2.6.7 Bind State Recheck
+
+on:
+  push:
+    branches: [mcsv-endweave-v2]
+    paths:
+      - "tools/build_item_mic_addon.py"
+      - "tools/build_item_mic_voice_range_addon.py"
+      - "tools/build_item_mic_v2_5_ddui_addon.py"
+      - "tools/build_item_mic_v2_5_5_ddui_addon.py"
+      - "tools/build_item_mic_v2_6_5_ddui_bind_addon.py"
+      - "tools/build_item_mic_v2_6_6_ddui_bind_addon.py"
+      - "tools/build_item_mic_v2_6_7_ddui_bind_addon.py"
+      - ".github/workflows/build-item-mic-v2.6.7-bind-state.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "tools/build_item_mic_addon.py"
+      - "tools/build_item_mic_voice_range_addon.py"
+      - "tools/build_item_mic_v2_5_ddui_addon.py"
+      - "tools/build_item_mic_v2_5_5_ddui_addon.py"
+      - "tools/build_item_mic_v2_6_5_ddui_bind_addon.py"
+      - "tools/build_item_mic_v2_6_6_ddui_bind_addon.py"
+      - "tools/build_item_mic_v2_6_7_ddui_bind_addon.py"
+      - ".github/workflows/build-item-mic-v2.6.7-bind-state.yml"
+  workflow_dispatch:
+
+jobs:
+  build-addon:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Pillow
+        run: python -m pip install pillow
+
+      - name: Compile builders
+        run: |
+          set -euo pipefail
+          python -m py_compile             tools/build_item_mic_addon.py             tools/build_item_mic_voice_range_addon.py             tools/build_item_mic_v2_5_ddui_addon.py             tools/build_item_mic_v2_5_5_ddui_addon.py             tools/build_item_mic_v2_6_5_ddui_bind_addon.py             tools/build_item_mic_v2_6_6_ddui_bind_addon.py             tools/build_item_mic_v2_6_7_ddui_bind_addon.py
+
+      - name: Build addon
+        run: |
+          set -euo pipefail
+          mkdir -p test-assets
+          python tools/build_item_mic_v2_6_7_ddui_bind_addon.py             .             test-assets/VoiceCraft_ItemMic_v2.6.7_DDUI-Bind.mcaddon
+          test -s test-assets/VoiceCraft_ItemMic_v2.6.7_DDUI-Bind.mcaddon
+
+      - name: Validate Bind state routing
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf check
+          mkdir -p check/top check/bp check/rp
+
+          unzip -q test-assets/VoiceCraft_ItemMic_v2.6.7_DDUI-Bind.mcaddon -d check/top
+          unzip -q check/top/VoiceCraft_ItemMic_BP_v2.6.7.mcpack -d check/bp
+          unzip -q check/top/VoiceCraft_ItemMic_RP_v2.6.7.mcpack -d check/rp
+
+          test "$(jq -r '.header.version | join(".")' check/bp/manifest.json)" = "2.6.7"
+          test "$(jq -r '.header.version | join(".")' check/rp/manifest.json)" = "2.6.7"
+          test "$(jq -r '.dependencies[] | select(.module_name=="@minecraft/server-ui") | .version' check/bp/manifest.json)" = "2.1.0"
+          test "$(jq -r '.dependencies[] | select(.module_name=="@minecraft/server") | .version' check/bp/manifest.json)" = "2.9.0"
+
+          script=check/bp/scripts/main.js
+          node --check "$script"
+
+          grep -Fq 'const bindStateCheckPlayers = new Set();' "$script"
+          grep -Fq 'if (state === "bound")' "$script"
+          grep -Fq 'if (state === "unbound" || state === "error")' "$script"
+          grep -Fq 'const refreshedState = bindState(player);' "$script"
+          grep -Fq 'if (refreshedState === "bound")' "$script"
+          grep -Fq '}, 4);' "$script"
+          grep -Fq 'Loaded v2.6.7' "$script"
+
+          python - <<'PY'
+          from pathlib import Path
+
+          text = Path("check/bp/scripts/main.js").read_text(encoding="utf-8")
+
+          state_start = text.index("function bindState(player)")
+          state_end = text.index("function bindError(player)", state_start)
+          state_body = text[state_start:state_end]
+          for state in (
+              "unbound",
+              "pending",
+              "bound",
+              "reconnecting",
+              "rebind_required",
+              "error",
+              "disconnecting",
+          ):
+              assert f'state === "{state}"' in state_body
+
+          use_start = text.index("function handleMicUse(player)")
+          use_end = text.index("function ensureBindDduiReady", use_start)
+          use_body = text[use_start:use_end]
+
+          # Bound must route to Mic Settings before any Bind fallback.
+          assert use_body.index('if (state === "bound")') < use_body.index("openBindFromMic(player);")
+          bound_block = use_body[
+              use_body.index('if (state === "bound")'):
+              use_body.index('if (state === "pending")')
+          ]
+          assert "showSettings(player);" in bound_block
+          assert "openBindFromMic(player);" not in bound_block
+
+          # Stale unbound/error gets one Endstone reconciliation window.
+          assert 'if (state === "unbound" || state === "error")' in use_body
+          assert "bindStateCheckPlayers.has(player.id)" in use_body
+          assert "system.runTimeout(() =>" in use_body
+          assert "const refreshedState = bindState(player);" in use_body
+          assert 'if (refreshedState === "bound")' in use_body
+          assert "showSettings(player);" in use_body
+          assert "}, 4);" in use_body
+
+          # reconnecting / rebind_required are not delayed and still use the
+          # explicit Bind recovery path from the accepted 2.6.5 behavior.
+          delayed = use_body[
+              use_body.index('if (state === "unbound" || state === "error")'):
+              use_body.index("// rebind_required / reconnecting")
+          ]
+          assert 'state === "reconnecting"' not in delayed
+          assert 'state === "rebind_required"' not in delayed
+
+          # Voice Range ACK and accepted Bind-submit close must survive.
+          assert "voicecraft.vr.ack." in text
+          assert "voicecraft.vr.sync." in text
+          assert "submittedCloseRequested" in text
+          assert "bind DDUI submit-close failed" in text
+
+          print("Item Mic 2.6.7 Bind-state routing verified")
+          PY
+
+          ! grep -Fq 'ActionFormData' "$script"
+          ! grep -Fq 'ModalFormData' "$script"
+          ! grep -Fq 'multiButtonRow' "$script"
+
+          test -s check/rp/attachables/mic_off.entity.json
+          test -s check/rp/models/entity/voicecraft_mic_invisible.geo.json
+
+      - name: Confirm 2.6.6 rollback still builds
+        run: |
+          set -euo pipefail
+          python tools/build_item_mic_v2_6_6_ddui_bind_addon.py             .             test-assets/VoiceCraft_ItemMic_v2.6.6_DDUI-Bind_rollback.mcaddon
+          test -s test-assets/VoiceCraft_ItemMic_v2.6.6_DDUI-Bind_rollback.mcaddon
+
+      - name: Upload addon
+        uses: actions/upload-artifact@v4
+        with:
+          name: VoiceCraft-ItemMic-v2.6.7-Bind-State-Recheck
+          path: test-assets/VoiceCraft_ItemMic_v2.6.7_DDUI-Bind.mcaddon
+          if-no-files-found: error
