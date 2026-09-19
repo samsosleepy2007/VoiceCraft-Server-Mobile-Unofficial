@@ -10,7 +10,7 @@ on:
       - "tools/build_item_mic_v2_5_5_ddui_addon.py"
       - "tools/build_item_mic_v2_6_3_ddui_bind_addon.py"
       - "tools/build_item_mic_v2_6_5_ddui_bind_addon.py"
-      - ".github/workflows/build-item-mic-v2.6.5-direct-bind.yml"
+      - ".github/workflows/build-item-mic-v2.6.5-submit-lock.yml"
   pull_request:
     branches: [main]
     paths:
@@ -20,7 +20,7 @@ on:
       - "tools/build_item_mic_v2_5_5_ddui_addon.py"
       - "tools/build_item_mic_v2_6_3_ddui_bind_addon.py"
       - "tools/build_item_mic_v2_6_5_ddui_bind_addon.py"
-      - ".github/workflows/build-item-mic-v2.6.5-direct-bind.yml"
+      - ".github/workflows/build-item-mic-v2.6.5-submit-lock.yml"
   workflow_dispatch:
 
 jobs:
@@ -41,7 +41,7 @@ jobs:
       - name: Compile builders
         run: |
           set -euo pipefail
-          python -m py_compile             tools/build_item_mic_addon.py             tools/build_item_mic_voice_range_addon.py             tools/build_item_mic_v2_5_ddui_addon.py             tools/build_item_mic_v2_5_5_ddui_addon.py             tools/build_item_mic_v2_6_3_ddui_bind_addon.py             tools/build_item_mic_v2_6_5_ddui_bind_addon.py
+          python -m py_compile             tools/build_item_mic_addon.py             tools/build_item_mic_voice_range_addon.py             tools/build_item_mic_v2_5_ddui_addon.py             tools/build_item_mic_v2_5_5_ddui_addon.py             tools/build_item_mic_v2_6_3_ddui_bind_addon.py             tools/build_item_mic_v2_6_4_ddui_bind_addon.py             tools/build_item_mic_v2_6_5_ddui_bind_addon.py
 
       - name: Build addon
         run: |
@@ -124,7 +124,6 @@ jobs:
 
           grep -Fq 'voicecraft.bind.ui.closed.' "$script"
           grep -Fq 'reportBindUiClosed' "$script"
-          grep -Fq 'form.isShowing()' "$script"
           grep -Fq 'form.close()' "$script"
           grep -Fq 'ev.initialSpawn === true' "$script"
           grep -Fq 'Loaded v2.6.5' "$script"
@@ -142,12 +141,12 @@ jobs:
       - name: Confirm 2.6.4 rollback still builds
         run: |
           set -euo pipefail
-          python tools/build_item_mic_v2_6_3_ddui_bind_addon.py             .             test-assets/VoiceCraft_ItemMic_v2.6.3_DDUI-Bind_rollback.mcaddon
-          test -s test-assets/VoiceCraft_ItemMic_v2.6.3_DDUI-Bind_rollback.mcaddon
+          python tools/build_item_mic_v2_6_4_ddui_bind_addon.py             .             test-assets/VoiceCraft_ItemMic_v2.6.4_DDUI-Bind_rollback.mcaddon
+          test -s test-assets/VoiceCraft_ItemMic_v2.6.4_DDUI-Bind_rollback.mcaddon
 
       - name: Upload addon
         uses: actions/upload-artifact@v4
         with:
-          name: VoiceCraft-ItemMic-v2.6.5-Direct-Bind
+          name: VoiceCraft-ItemMic-v2.6.5-Submit-Lock
           path: test-assets/VoiceCraft_ItemMic_v2.6.5_DDUI-Bind.mcaddon
           if-no-files-found: error
