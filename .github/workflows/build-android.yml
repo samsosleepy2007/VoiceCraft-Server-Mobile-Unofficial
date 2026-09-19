@@ -231,7 +231,7 @@ jobs:
           python -m pip install build
           python -m compileall -q VoiceCraft.Endstone/src VoiceCraft.Endstone/tests
           (cd VoiceCraft.Endstone && python -m build --wheel)
-          wheel=$(find VoiceCraft.Endstone/dist -maxdepth 1 -name 'endstone_voicecraft-0.2.8-*.whl' -print -quit)
+          wheel=$(find VoiceCraft.Endstone/dist -maxdepth 1 -name 'endstone_voicecraft-0.2.17-*.whl' -print -quit)
           test -n "$wheel"
           cp "$wheel" test-assets/endstone_voicecraft-0.2.17-py3-none-any.whl
           sha256sum test-assets/endstone_voicecraft-0.2.17-py3-none-any.whl | tee test-assets/PLUGIN_SHA256.txt
