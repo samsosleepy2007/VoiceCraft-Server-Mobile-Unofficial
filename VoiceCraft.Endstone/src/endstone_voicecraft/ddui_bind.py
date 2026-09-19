@@ -25,13 +25,13 @@ STATE_DISCONNECTING = "disconnecting"
 
 
 class VoiceCraftEndstone(VoiceCraftEndstone028):
-    """Endstone 0.2.14: direct Mic Bind plus authoritative Voice Range ACK sync."""
+    """Endstone 0.2.15: authoritative Bind-state reconciliation plus Voice Range ACK sync."""
 
     prefix = "VoiceCraftEndstone"
-    version = "0.2.14"
+    version = "0.2.15"
     api_version = "0.11"
     description = (
-        "VoiceCraft binding, direct Mic Bind, reconnect/rebind recovery, failover, "
+        "VoiceCraft authoritative Bind-state reconciliation, reconnect/rebind recovery, "
         "Item Mic and authoritative per-player voice range ACK sync"
     )
     authors = ["SamSoSleepy"]
@@ -152,25 +152,76 @@ class VoiceCraftEndstone(VoiceCraftEndstone028):
             self._bind_open_sequence = (self._bind_open_sequence + 1) % 2_000_000_000
             player.add_scoreboard_tag(f"{BIND_OPEN_PREFIX}{self._bind_open_sequence}")
 
-    def _publish_derived_bind_state(self, player: Player) -> None:
+    def _authoritative_bind_state(self, player: Player) -> str:
         player_key = self._player_key(player)
         if player_key in self._pending_unbind_requests:
-            state = STATE_DISCONNECTING
-        elif player_key in self._bound_players:
-            state = STATE_BOUND
-        elif player_key in self._pending_bind_keys:
-            state = STATE_PENDING
-        elif player_key in self._rebind_waiting:
-            state = STATE_RECONNECTING
-        else:
-            state = STATE_UNBOUND
+            return STATE_DISCONNECTING
+        if player_key in self._bound_players:
+            return STATE_BOUND
+        if player_key in self._pending_bind_keys:
+            return STATE_PENDING
+        if player_key in self._rebind_waiting:
+            return STATE_RECONNECTING
+
+        # Error/rebind-required are UI states rather than live connection
+        # ownership. Preserve them only while no stronger runtime state exists.
+        try:
+            current_states = [
+                tag[len(BIND_STATE_PREFIX):]
+                for tag in player.scoreboard_tags
+                if tag.startswith(BIND_STATE_PREFIX)
+            ]
+        except Exception:
+            current_states = []
+
+        if STATE_REBIND_REQUIRED in current_states:
+            return STATE_REBIND_REQUIRED
+        if STATE_ERROR in current_states:
+            return STATE_ERROR
+        return STATE_UNBOUND
+
+    def _reconcile_bind_state_tag(self, player: Player) -> str:
+        """Make the Bedrock state tag match Endstone's authoritative runtime state.
+
+        This intentionally changes only voicecraft.bind.state.* so an active
+        DDUI open token or error detail is not destroyed by periodic syncing.
+        """
+        desired = self._authoritative_bind_state(player)
+        desired_tag = f"{BIND_STATE_PREFIX}{desired}"
 
         try:
-            if any(tag.startswith(BIND_STATE_PREFIX) for tag in player.scoreboard_tags):
-                return
+            state_tags = [
+                tag for tag in player.scoreboard_tags
+                if tag.startswith(BIND_STATE_PREFIX)
+            ]
         except Exception:
-            pass
-        self._publish_bind_state(player, state)
+            state_tags = []
+
+        if len(state_tags) == 1 and state_tags[0] == desired_tag:
+            return desired
+
+        for tag in state_tags:
+            try:
+                player.remove_scoreboard_tag(tag)
+            except Exception:
+                pass
+        try:
+            player.add_scoreboard_tag(desired_tag)
+        except Exception as exc:
+            self.logger.warning(
+                f"BIND STATE reconcile failed player={getattr(player, 'name', '?')} "
+                f"state={desired}: {type(exc).__name__}: {exc}"
+            )
+            return desired
+
+        self.logger.info(
+            f"BIND STATE reconciled player={player.name} "
+            f"old={state_tags or ['<none>']} new={desired}"
+        )
+        return desired
+
+    def _publish_derived_bind_state(self, player: Player) -> None:
+        self._reconcile_bind_state_tag(player)
 
     def _request_bind_ui(
         self,
@@ -330,6 +381,12 @@ class VoiceCraftEndstone(VoiceCraftEndstone028):
             return
 
         if success:
+            # Belt-and-suspenders: the lower auto_bind layer should already
+            # mark the canonical key bound. Reassert it here before publishing
+            # the Bedrock state tag so Item Mic cannot observe stale unbound.
+            self._bound_players.add(player_key)
+            self._pending_bind_keys.pop(player_key, None)
+            self._pending_bind_requests.pop(player_key, None)
             self._rebind_waiting.discard(player_key)
             self._publish_bind_state(player, STATE_BOUND)
             return
