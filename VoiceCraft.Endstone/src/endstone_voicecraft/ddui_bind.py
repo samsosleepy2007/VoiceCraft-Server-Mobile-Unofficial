@@ -25,14 +25,14 @@ STATE_DISCONNECTING = "disconnecting"
 
 
 class VoiceCraftEndstone(VoiceCraftEndstone028):
-    """Endstone 0.2.13: direct Mic Bind support with concise reconnect messages."""
+    """Endstone 0.2.14: direct Mic Bind plus authoritative Voice Range ACK sync."""
 
     prefix = "VoiceCraftEndstone"
-    version = "0.2.13"
+    version = "0.2.14"
     api_version = "0.11"
     description = (
-        "VoiceCraft binding, direct Mic Bind, explicit reconnect/rebind state, failover, "
-        "Item Mic and per-player voice range"
+        "VoiceCraft binding, direct Mic Bind, reconnect/rebind recovery, failover, "
+        "Item Mic and authoritative per-player voice range ACK sync"
     )
     authors = ["SamSoSleepy"]
 
