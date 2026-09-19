@@ -25,14 +25,14 @@ STATE_DISCONNECTING = "disconnecting"
 
 
 class VoiceCraftEndstone(VoiceCraftEndstone028):
-    """Endstone 0.2.11: unified DDUI bind request, reconnect and lifecycle state."""
+    """Endstone 0.2.12: direct Mic Bind support plus explicit reconnect/rebind state."""
 
     prefix = "VoiceCraftEndstone"
-    version = "0.2.11"
+    version = "0.2.12"
     api_version = "0.11"
     description = (
-        "VoiceCraft binding, unified DDUI requests, auto rebind, failover, Item Mic "
-        "and per-player voice range"
+        "VoiceCraft binding, direct Mic Bind, explicit reconnect/rebind state, failover, "
+        "Item Mic and per-player voice range"
     )
     authors = ["SamSoSleepy"]
 
@@ -68,7 +68,7 @@ class VoiceCraftEndstone(VoiceCraftEndstone028):
         for player in self.server.online_players:
             self._publish_derived_bind_state(player)
         self.logger.info(
-            "VoiceCraft unified DDUI bind bridge ready; addon handshake="
+            "VoiceCraft direct-Mic DDUI bind bridge ready; addon handshake="
             f"{BIND_DDUI_READY_TAG}; ModalForm fallback retained"
         )
 
@@ -284,9 +284,15 @@ class VoiceCraftEndstone(VoiceCraftEndstone028):
             return
 
         if player_key in self._rebind_waiting:
-            self._publish_bind_state(player, STATE_RECONNECTING)
+            if self._has_bind_ddui(player):
+                self._request_bind_ui(
+                    player_key,
+                    state=STATE_RECONNECTING,
+                    source="vc_menu_reconnecting",
+                )
+                return
             player.send_message(
-                "§e[VoiceCraft] กำลังรอ VoiceCraft เชื่อมต่อกลับอัตโนมัติ กรุณารอสักครู่...§r"
+                "§e[VoiceCraft] กำลังเชื่อมต่อ VoiceCraft กลับอัตโนมัติ กรุณารอสักครู่...§r"
             )
             return
 
@@ -389,7 +395,8 @@ class VoiceCraftEndstone(VoiceCraftEndstone028):
 
         self._publish_bind_state(player, STATE_RECONNECTING)
         player.send_message(
-            "§e[VoiceCraft] การเชื่อมต่อไมค์หลุด กำลังรอเชื่อมต่อกลับอัตโนมัติ...§r"
+            "§e[VoiceCraft] การเชื่อมต่อไมค์หลุด กำลังพยายามเชื่อมต่อกลับอัตโนมัติ... "
+            "หากยังเชื่อมต่อไม่ได้ ให้กดใช้ไอเทม Mic เพื่อเชื่อมต่ออีกครั้ง§r"
         )
         self.logger.info(
             f"VOICE DISCONNECT player={player.name} xuid={player.xuid}; "
@@ -404,16 +411,15 @@ class VoiceCraftEndstone(VoiceCraftEndstone028):
             if online is None:
                 return
 
-            opened = self._request_bind_ui(
-                player_key,
-                state=STATE_REBIND_REQUIRED,
-                source="auto_rebind_timeout",
+            self._auto_bind_shown.discard(player_key)
+            self._publish_bind_state(
+                online,
+                STATE_REBIND_REQUIRED,
             )
-            if opened:
-                online.send_message(
-                    "§e[VoiceCraft] ยังเชื่อมต่อกลับไม่ได้ กรุณาเชื่อมต่อเซิร์ฟเวอร์ไมค์ใน VoiceCraft "
-                    "แล้วนำ Binding Key ใหม่มากรอก§r"
-                )
+            online.send_message(
+                "§e[VoiceCraft] ยังเชื่อมต่อกลับไม่ได้ กรุณาเชื่อมต่อเซิร์ฟเวอร์ไมค์ใน VoiceCraft "
+                "แล้วกดใช้ไอเทม Mic เพื่อกรอก Binding Key ใหม่ หรือใช้ /vc > Bind Microphone§r"
+            )
 
         try:
             self.server.scheduler.run_task(
