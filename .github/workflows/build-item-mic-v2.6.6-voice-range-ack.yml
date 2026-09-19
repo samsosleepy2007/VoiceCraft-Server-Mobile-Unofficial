@@ -89,7 +89,7 @@ jobs:
           text = Path("check/bp/scripts/main.js").read_text(encoding="utf-8")
 
           request_start = text.index("function requestVoiceRange(player, value)")
-          request_end = text.index("async function showVoiceRangeCustom", request_start)
+          request_end = text.index("function applyMicModeFromUi", request_start)
           request_body = text[request_start:request_end]
 
           # Never optimistically persist the requested value before ACK.
