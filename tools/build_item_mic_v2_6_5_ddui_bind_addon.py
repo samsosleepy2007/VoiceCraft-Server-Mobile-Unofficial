@@ -225,6 +225,7 @@ async function showBindDdui(player, openToken) {
     let submitInFlight = false;
     let submitStartedTick = 0;
     let boundCloseAttempts = 0;
+    let submittedCloseRequested = false;
 
     const unlockSubmit = () => {
       submitInFlight = false;
@@ -263,7 +264,23 @@ async function showBindDdui(player, openToken) {
         );
         if (!queued) {
           unlockSubmit();
+          return;
         }
+
+        // A valid local submission should leave the form immediately. If the
+        // server later rejects the key, Endstone publishes STATE_ERROR with a
+        // fresh open token and the Bind DDUI reopens with the error message.
+        submittedCloseRequested = true;
+        system.run(() => {
+          try {
+            form.close();
+          } catch (e) {
+            console.warn(
+              "[VoiceCraftItem/BP] bind DDUI submit-close failed player=" +
+              player.name + ": " + e
+            );
+          }
+        });
       }, { visible: submitVisible });
 
     refreshId = system.runInterval(() => {
@@ -328,7 +345,7 @@ async function showBindDdui(player, openToken) {
     const reasonName = closeReasonName(closeReason);
     const stateAfterClose = bindState(player);
 
-    if (stateAfterClose !== "bound") {
+    if (stateAfterClose !== "bound" && !submittedCloseRequested) {
       if (reasonName.includes("UserBusy")) {
         bindRetryAfterTick.set(player.id, system.currentTick + 20);
         bindLastOpenToken.delete(player.id);
@@ -419,7 +436,7 @@ system.runInterval(() => {
     js = js.replace(mic_use_old, mic_use_new, 1)
     js = js.replace(
         "[VoiceCraftItem/BP] Loaded v2.5.5 — spaced Mic Mode and Reset descriptions + stable DDUI controls",
-        "[VoiceCraftItem/BP] Loaded v2.6.5 — Bind submit lock + reliable success close",
+        "[VoiceCraftItem/BP] Loaded v2.6.5 — immediate submit-close + reliable Bind fallback",
         1,
     )
 
@@ -445,6 +462,8 @@ system.runInterval(() => {
         "submitVisible",
         "inputDisabled",
         "submitInFlight",
+        "submittedCloseRequested",
+        "bind DDUI submit-close failed",
         "unlockSubmit",
         "{ visible: submitVisible }",
         "disabled: inputDisabled",
