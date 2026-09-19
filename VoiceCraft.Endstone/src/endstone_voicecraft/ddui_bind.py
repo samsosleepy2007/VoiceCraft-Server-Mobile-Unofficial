@@ -14,6 +14,8 @@ BIND_REQUEST_PREFIX = "voicecraft.bind.request."
 BIND_ERROR_PREFIX = "voicecraft.bind.error."
 BIND_UI_CLOSED_PREFIX = "voicecraft.bind.ui.closed."
 BIND_UI_REQUEST_PREFIX = "voicecraft.bind.ui.request."
+BIND_CHECK_PREFIX = "voicecraft.bind.check."
+BIND_CHECK_RESULT_PREFIX = "voicecraft.bind.check_result."
 
 STATE_UNBOUND = "unbound"
 STATE_PENDING = "pending"
@@ -25,13 +27,13 @@ STATE_DISCONNECTING = "disconnecting"
 
 
 class VoiceCraftEndstone(VoiceCraftEndstone028):
-    """Endstone 0.2.15: authoritative Bind-state reconciliation plus Voice Range ACK sync."""
+    """Endstone 0.2.16: authoritative Mic Bind-state handshake plus Voice Range ACK sync."""
 
     prefix = "VoiceCraftEndstone"
-    version = "0.2.15"
+    version = "0.2.16"
     api_version = "0.11"
     description = (
-        "VoiceCraft authoritative Bind-state reconciliation, reconnect/rebind recovery, "
+        "VoiceCraft authoritative Mic Bind-state handshake, reconnect/rebind recovery, "
         "Item Mic and authoritative per-player voice range ACK sync"
     )
     authors = ["SamSoSleepy"]
@@ -89,6 +91,8 @@ class VoiceCraftEndstone(VoiceCraftEndstone028):
             BIND_ERROR_PREFIX,
             BIND_UI_CLOSED_PREFIX,
             BIND_UI_REQUEST_PREFIX,
+            BIND_CHECK_PREFIX,
+            BIND_CHECK_RESULT_PREFIX,
             BIND_DDUI_READY_TAG,
         )
 
@@ -106,6 +110,8 @@ class VoiceCraftEndstone(VoiceCraftEndstone028):
             BIND_REQUEST_PREFIX,
             BIND_ERROR_PREFIX,
             BIND_UI_CLOSED_PREFIX,
+            BIND_CHECK_PREFIX,
+            BIND_CHECK_RESULT_PREFIX,
             BIND_DDUI_READY_TAG,
         )
         super().handle_player_quit(player)
@@ -222,6 +228,65 @@ class VoiceCraftEndstone(VoiceCraftEndstone028):
 
     def _publish_derived_bind_state(self, player: Player) -> None:
         self._reconcile_bind_state_tag(player)
+
+    @staticmethod
+    def _safe_bind_check_id(value: str) -> str:
+        return "".join(
+            ch for ch in str(value)
+            if ch.isalnum() or ch in "_-"
+        )[:48]
+
+    def _process_bind_check_requests(
+        self,
+        player: Player,
+        tags: tuple[str, ...] | None = None,
+    ) -> bool:
+        """Answer Item Mic state checks from Endstone runtime authority."""
+        if tags is None:
+            try:
+                tags = tuple(player.scoreboard_tags)
+            except Exception:
+                tags = ()
+
+        requests = [
+            tag for tag in tags
+            if tag.startswith(BIND_CHECK_PREFIX)
+        ]
+        if not requests:
+            return False
+
+        for tag in requests:
+            try:
+                player.remove_scoreboard_tag(tag)
+            except Exception:
+                pass
+
+            request_id = self._safe_bind_check_id(
+                tag[len(BIND_CHECK_PREFIX):].strip()
+            )
+            if not request_id:
+                continue
+
+            state = self._reconcile_bind_state_tag(player)
+            result_prefix = f"{BIND_CHECK_RESULT_PREFIX}{request_id}."
+            self._remove_prefixed_tags(player, result_prefix)
+            try:
+                player.add_scoreboard_tag(
+                    f"{BIND_CHECK_RESULT_PREFIX}{request_id}.{state}"
+                )
+            except Exception as exc:
+                self.logger.warning(
+                    f"BIND CHECK response failed player={getattr(player, 'name', '?')} "
+                    f"request={request_id}: {type(exc).__name__}: {exc}"
+                )
+                continue
+
+            self.logger.info(
+                f"BIND CHECK player={player.name} authority={state} "
+                f"request={request_id}"
+            )
+
+        return True
 
     def _request_bind_ui(
         self,
@@ -514,6 +579,9 @@ class VoiceCraftEndstone(VoiceCraftEndstone028):
             try:
                 tags = tuple(player.scoreboard_tags)
                 player_key = self._player_key(player)
+
+                if self._process_bind_check_requests(player, tags):
+                    tags = tuple(player.scoreboard_tags)
 
                 closed_events = [
                     tag for tag in tags if tag.startswith(BIND_UI_CLOSED_PREFIX)
