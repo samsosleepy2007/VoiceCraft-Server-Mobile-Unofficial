@@ -33,7 +33,7 @@ def patch_manifest(text: str, name: str, description: str) -> str:
 def patch_script(js: str) -> str:
     js = previous.patch_script(js)
 
-    constant_anchor = 'const BIND_UI_REQUEST_PREFIX = "voicecraft.bind.ui.request.";\n'
+    constant_anchor = 'const BIND_UI_CLOSED_PREFIX = "voicecraft.bind.ui.closed.";\n'
     if constant_anchor not in js:
         raise RuntimeError("Item Mic 2.6.8 bind check constant anchor missing")
     js = js.replace(
