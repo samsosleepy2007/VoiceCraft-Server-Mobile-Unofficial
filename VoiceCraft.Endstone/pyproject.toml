@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "endstone-voicecraft"
-version = "0.2.12"
+version = "0.2.13"
 description = "VoiceCraft Endstone player-state, direct Mic Bind DDUI, reconnect/rebind recovery, multi-relay, Item Mic and outgoing voice range bridge for VoiceCraft Server Mobile"
 readme = "README.md"
 requires-python = ">=3.10"
