@@ -1,4 +1,4 @@
-name: Build Item Mic 2.6.5 Bind Submit Lock
+name: Build Item Mic 2.6.5 Immediate Submit Close
 
 on:
   push:
@@ -50,7 +50,7 @@ jobs:
           python tools/build_item_mic_v2_6_5_ddui_bind_addon.py             .             test-assets/VoiceCraft_ItemMic_v2.6.5_DDUI-Bind.mcaddon
           test -s test-assets/VoiceCraft_ItemMic_v2.6.5_DDUI-Bind.mcaddon
 
-      - name: Validate Bind submit lock and reliable close
+      - name: Validate Bind immediate submit close and fallback
         shell: bash
         run: |
           set -euo pipefail
@@ -78,6 +78,9 @@ jobs:
           grep -Fq 'const submitVisible = new ObservableBoolean(true);' "$script"
           grep -Fq 'const inputDisabled = new ObservableBoolean(false);' "$script"
           grep -Fq 'if (submitInFlight) return;' "$script"
+          grep -Fq 'let submittedCloseRequested = false;' "$script"
+          grep -Fq 'submittedCloseRequested = true;' "$script"
+          grep -Fq 'bind DDUI submit-close failed' "$script"
           grep -Fq 'submitVisible.setData(false);' "$script"
           grep -Fq 'inputDisabled.setData(true);' "$script"
           grep -Fq '{ visible: submitVisible }' "$script"
@@ -104,6 +107,15 @@ jobs:
           assert button_body.index("submitInFlight = true;") < button_body.index("submitBindingKey(")
           assert button_body.index("submitVisible.setData(false);") < button_body.index("submitBindingKey(")
           assert button_body.index("inputDisabled.setData(true);") < button_body.index("submitBindingKey(")
+          assert "submittedCloseRequested = true;" in button_body
+          assert "form.close();" in button_body
+          assert button_body.index("submitBindingKey(") < button_body.index("submittedCloseRequested = true;")
+          assert button_body.index("submittedCloseRequested = true;") < button_body.index("form.close();")
+
+          close_reason_start = text.index("const closeReason = await form.show();")
+          close_reason_end = text.index("} catch (e) {", close_reason_start)
+          close_reason_body = text[close_reason_start:close_reason_end]
+          assert 'stateAfterClose !== "bound" && !submittedCloseRequested' in close_reason_body
 
           start = text.index("function handleMicUse(player)")
           end = text.index("function ensureBindDduiReady", start)
@@ -147,6 +159,6 @@ jobs:
       - name: Upload addon
         uses: actions/upload-artifact@v4
         with:
-          name: VoiceCraft-ItemMic-v2.6.5-Submit-Lock
+          name: VoiceCraft-ItemMic-v2.6.5-Immediate-Close
           path: test-assets/VoiceCraft_ItemMic_v2.6.5_DDUI-Bind.mcaddon
           if-no-files-found: error
