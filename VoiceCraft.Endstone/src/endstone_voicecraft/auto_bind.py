@@ -48,7 +48,7 @@ class VoiceCraftEndstone(VoiceCraftEndstone021):
         super().handle_player_quit(player)
 
     def _handle_bind_result(self, message: dict[str, Any]) -> None:
-        player_key = str(message.get("xuid", "") or message.get("uuid", ""))
+        player_key = self._resolve_bind_player_key(message)
         success = bool(message.get("success", False))
 
         super()._handle_bind_result(message)
