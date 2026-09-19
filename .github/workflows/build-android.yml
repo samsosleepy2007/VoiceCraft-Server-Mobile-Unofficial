@@ -24,6 +24,7 @@ on:
       - "tools/apply_mcsv_endweave_v2.py"
       - "tools/apply_mcsv_endweave_v2_ui.py"
       - "tools/apply_release_channel_v3_hotfix.py"
+      - "tools/apply_release_channel_v3_0_2.py"
       - "release-manifest.json"
       - ".github/workflows/build-android.yml"
       - ".gitmodules"
@@ -49,6 +50,7 @@ on:
       - "tools/apply_mcsv_endweave_v2.py"
       - "tools/apply_mcsv_endweave_v2_ui.py"
       - "tools/apply_release_channel_v3_hotfix.py"
+      - "tools/apply_release_channel_v3_0_2.py"
       - "release-manifest.json"
       - ".github/workflows/build-android.yml"
       - ".gitmodules"
@@ -91,8 +93,9 @@ jobs:
           python tools/apply_mcsv_endweave_v2.py .
           python tools/apply_mcsv_endweave_v2_ui.py .
           python tools/apply_release_channel_v3_hotfix.py .
+          python tools/apply_release_channel_v3_0_2.py .
 
-      - name: Set MCSV V3.0.1 Android identity
+      - name: Set MCSV V3.0.2 Android identity
         shell: bash
         run: |
           set -euo pipefail
@@ -100,20 +103,20 @@ jobs:
           from pathlib import Path
           import re
 
-          display = "1.7.1-android-phase2-ui5-mcsv-v3.0.1-endweave"
+          display = "1.7.1-android-phase2-ui5-mcsv-v3.0.2-endweave"
           csproj = Path("VoiceCraft.Server.Android/VoiceCraft.Server.Android.csproj")
           text = csproj.read_text(encoding="utf-8")
-          text, n1 = re.subn(r"<ApplicationVersion>\d+</ApplicationVersion>", "<ApplicationVersion>21</ApplicationVersion>", text, count=1)
+          text, n1 = re.subn(r"<ApplicationVersion>\d+</ApplicationVersion>", "<ApplicationVersion>22</ApplicationVersion>", text, count=1)
           text, n2 = re.subn(r"<ApplicationDisplayVersion>[^<]+</ApplicationDisplayVersion>", f"<ApplicationDisplayVersion>{display}</ApplicationDisplayVersion>", text, count=1)
           if n1 != 1 or n2 != 1:
-              raise SystemExit("Could not set MCSV V3.0.1 Android identity")
+              raise SystemExit("Could not set MCSV V3.0.2 Android identity")
           csproj.write_text(text, encoding="utf-8")
 
           bridge = Path("VoiceCraft.Server.Android/EndstoneBridgeController.cs")
           text = bridge.read_text(encoding="utf-8")
           text, n = re.subn(r'appVersion = "[^"]+"', f'appVersion = "{display}"', text, count=1)
           if n != 1:
-              raise SystemExit("Could not set MCSV V3.0.1 bridge appVersion")
+              raise SystemExit("Could not set MCSV V3.0.2 bridge appVersion")
           bridge.write_text(text, encoding="utf-8")
           PY
 
@@ -122,10 +125,10 @@ jobs:
         run: |
           set -euo pipefail
           check() { echo "[guard] $1"; shift; "$@"; }
-          check "MCSV patch scripts compile" python -m compileall -q tools/apply_mcsv_integration.py tools/apply_mcsv_theme_guide_fix.py tools/apply_mcsv_endweave_v2.py tools/apply_mcsv_endweave_v2_ui.py tools/apply_release_channel_v3_hotfix.py
+          check "MCSV patch scripts compile" python -m compileall -q tools/apply_mcsv_integration.py tools/apply_mcsv_theme_guide_fix.py tools/apply_mcsv_endweave_v2.py tools/apply_mcsv_endweave_v2_ui.py tools/apply_release_channel_v3_hotfix.py tools/apply_release_channel_v3_0_2.py
           check "current release manifest protocol 1" grep -Fq '"protocol": 1' release-manifest.json
-          check "current release manifest version 21" grep -Fq '"version_code": 21' release-manifest.json
-          check "current release manifest V3.0.1" grep -Fq '1.7.1-android-phase2-ui5-mcsv-v3.0.1-endweave' release-manifest.json
+          check "current release manifest version 21" grep -Fq '"version_code": 22' release-manifest.json
+          check "current release manifest V3.0.1" grep -Fq '1.7.1-android-phase2-ui5-mcsv-v3.0.2-endweave' release-manifest.json
           check "MCSV API client" test -f VoiceCraft.Server.Android/McsvApiClient.cs
           check "MCSV installer" test -f VoiceCraft.Server.Android/McsvVoiceCraftInstaller.cs
           check "Endweave runtime detector" test -f VoiceCraft.Server.Android/McsvEndweaveSupport.cs
@@ -153,18 +156,18 @@ jobs:
           check "Ready gate" grep -q 'Ready — Endweave + VoiceCraft online' VoiceCraft.Server.Android/McsvVoiceCraftInstaller.cs
           check "latest release channel in MCSV installer" grep -Fq 'releases/latest/download/' VoiceCraft.Server.Android/McsvVoiceCraftInstaller.cs
           check "latest release channel in configured plugin downloader" grep -Fq 'releases/latest/download/' VoiceCraft.Server.Android/ConfiguredPluginDownloadInjector.cs
-          check "configured plugin uses 0.2.8" grep -Fq 'endstone_voicecraft-0.2.8-py3-none-any.whl' VoiceCraft.Server.Android/ConfiguredPluginDownloadInjector.cs
-          check "configured plugin verifies 0.2.8 SHA" grep -Fq 'b6ac91c8e02441edb2476af3c473f58baf70fd99189c702342389931997840ea' VoiceCraft.Server.Android/ConfiguredPluginDownloadInjector.cs
+          check "configured plugin uses 0.2.17" grep -Fq 'endstone_voicecraft-0.2.17-py3-none-any.whl' VoiceCraft.Server.Android/ConfiguredPluginDownloadInjector.cs
+          check "configured plugin verifies 0.2.17 SHA" grep -Fq '4d8895fa653a6c01f0d935f648be7b4e94357999663c5358a0280f55a99f9e1c' VoiceCraft.Server.Android/ConfiguredPluginDownloadInjector.cs
           check "deleted Item Mic tag absent" bash -c '! grep -R -Fq "v1.7.1-itemmic2.4.0-hidden-single" VoiceCraft.Server.Android'
           check "deleted Voice Range release tag absent" bash -c '! grep -R -Fq "v1.7.1-android-phase2-ui5-voice-range-strongfade50-endstone0.2.8-relay0.2.1-itemmic2.3.0" VoiceCraft.Server.Android'
           check "deleted 0.2.6 release tag absent" bash -c '! grep -R -Fq "v1.7.1-android-phase2-ui4.5.2-account-v2-guest-endstone0.2.6-relay0.2.1" VoiceCraft.Server.Android'
           check "automatic server restart" grep -q 'action = "restart"' VoiceCraft.Server.Android/McsvVoiceCraftInstaller.cs
           check "voice range fade start" grep -q 'VoiceRangeFadeStartRatio = 0.50f' VoiceCraft.Server.Android/EndstoneBridgeController.cs
           check "strong fade exponent" grep -q 'MathF.Pow(linearFactor, 1.5f)' VoiceCraft.Upstream/VoiceCraft.Network/Audio/Effects/ProximityEffect.cs
-          check "Endstone source 0.2.8" grep -q 'version = "0.2.8"' VoiceCraft.Endstone/pyproject.toml
-          check "production version code 21" grep -q '<ApplicationVersion>21</ApplicationVersion>' VoiceCraft.Server.Android/VoiceCraft.Server.Android.csproj
-          check "production display version V3.0.1" grep -q '<ApplicationDisplayVersion>1.7.1-android-phase2-ui5-mcsv-v3.0.1-endweave</ApplicationDisplayVersion>' VoiceCraft.Server.Android/VoiceCraft.Server.Android.csproj
-          check "production bridge version V3.0.1" grep -q 'appVersion = "1.7.1-android-phase2-ui5-mcsv-v3.0.1-endweave"' VoiceCraft.Server.Android/EndstoneBridgeController.cs
+          check "Endstone source 0.2.17" grep -q 'version = "0.2.17"' VoiceCraft.Endstone/pyproject.toml
+          check "production version code 22" grep -q '<ApplicationVersion>22</ApplicationVersion>' VoiceCraft.Server.Android/VoiceCraft.Server.Android.csproj
+          check "production display version V3.0.1" grep -q '<ApplicationDisplayVersion>1.7.1-android-phase2-ui5-mcsv-v3.0.2-endweave</ApplicationDisplayVersion>' VoiceCraft.Server.Android/VoiceCraft.Server.Android.csproj
+          check "production bridge version V3.0.1" grep -q 'appVersion = "1.7.1-android-phase2-ui5-mcsv-v3.0.2-endweave"' VoiceCraft.Server.Android/EndstoneBridgeController.cs
           check "legal source link" grep -q 'https://github.com/AvionBlock/VoiceCraft' VoiceCraft.Server.Android/ModernMainActivity.cs
           check "GPL notice" grep -q 'GPL-3.0' VoiceCraft.Server.Android/ModernMainActivity.cs
 
@@ -203,16 +206,16 @@ jobs:
           mkdir -p test-assets
           signed=$(find VoiceCraft.Server.Android/bin/Release/net10.0-android/android-arm64/publish -maxdepth 1 -name '*-Signed.apk' -print -quit)
           test -n "$signed"
-          cp "$signed" test-assets/VoiceCraft-Server-Mobile-MCSV-V3.0.1-Endweave-arm64-Signed.apk
-          sha256sum test-assets/VoiceCraft-Server-Mobile-MCSV-V3.0.1-Endweave-arm64-Signed.apk | tee test-assets/APK_SHA256.txt
+          cp "$signed" test-assets/VoiceCraft-Server-Mobile-MCSV-V3.0.2-Endweave-arm64-Signed.apk
+          sha256sum test-assets/VoiceCraft-Server-Mobile-MCSV-V3.0.2-Endweave-arm64-Signed.apk | tee test-assets/APK_SHA256.txt
 
       - name: Upload production APK
         uses: actions/upload-artifact@v4
         with:
-          name: VoiceCraft-Server-Mobile-MCSV-V3.0.1-Endweave-Android-arm64
+          name: VoiceCraft-Server-Mobile-MCSV-V3.0.2-Endweave-Android-arm64
           if-no-files-found: error
           path: |
-            test-assets/VoiceCraft-Server-Mobile-MCSV-V3.0.1-Endweave-arm64-Signed.apk
+            test-assets/VoiceCraft-Server-Mobile-MCSV-V3.0.2-Endweave-arm64-Signed.apk
             test-assets/APK_SHA256.txt
 
       - name: Setup Python 3.11
@@ -220,7 +223,7 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Build Endstone 0.2.8 wheel
+      - name: Build Endstone 0.2.17 wheel
         shell: bash
         run: |
           set -euo pipefail
@@ -230,14 +233,14 @@ jobs:
           (cd VoiceCraft.Endstone && python -m build --wheel)
           wheel=$(find VoiceCraft.Endstone/dist -maxdepth 1 -name 'endstone_voicecraft-0.2.8-*.whl' -print -quit)
           test -n "$wheel"
-          cp "$wheel" test-assets/endstone_voicecraft-0.2.8-py3-none-any.whl
-          sha256sum test-assets/endstone_voicecraft-0.2.8-py3-none-any.whl | tee test-assets/PLUGIN_SHA256.txt
+          cp "$wheel" test-assets/endstone_voicecraft-0.2.17-py3-none-any.whl
+          sha256sum test-assets/endstone_voicecraft-0.2.17-py3-none-any.whl | tee test-assets/PLUGIN_SHA256.txt
 
-      - name: Upload Endstone 0.2.8 wheel
+      - name: Upload Endstone 0.2.17 wheel
         uses: actions/upload-artifact@v4
         with:
-          name: VoiceCraft-Endstone-0.2.8
+          name: VoiceCraft-Endstone-0.2.17
           if-no-files-found: error
           path: |
-            test-assets/endstone_voicecraft-0.2.8-py3-none-any.whl
+            test-assets/endstone_voicecraft-0.2.17-py3-none-any.whl
             test-assets/PLUGIN_SHA256.txt

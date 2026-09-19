@@ -1,3 +1,11 @@
+## 2026-09-19 — MCSV Endweave V3.0.2
+
+- Promoted Endstone VoiceCraft **0.2.17** and Item Mic **2.6.10** after in-game validation.
+- Added authoritative Bind-state checks, requestId stale-result protection, and clean Settings → disconnect → rebind lifecycle.
+- Bind DDUI now closes cleanly on submit; Mic is withheld during Bind and returned after authoritative success.
+- Voice Range uses request/ACK/sync state so DDUI values stay consistent with Endstone.
+- Android production identity bumped to **version code 22** and the latest release channel now serves the tested 0.2.17/2.6.10 artifacts.
+
 # Changelog
 
 All notable changes to VoiceCraft Server Mobile are recorded here.
