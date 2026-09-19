@@ -1,0 +1,141 @@
+name: Build Endstone 0.2.14 Voice Range ACK
+
+on:
+  push:
+    branches: [mcsv-endweave-v2]
+    paths:
+      - "VoiceCraft.Endstone/**"
+      - ".github/workflows/build-endstone-0.2.14-voice-range-ack.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "VoiceCraft.Endstone/**"
+      - ".github/workflows/build-endstone-0.2.14-voice-range-ack.yml"
+  workflow_dispatch:
+
+jobs:
+  build-wheel:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install build and Endstone API
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install build "endstone==0.11.10" "aiohttp>=3.9"
+
+      - name: Compile Endstone source
+        run: python -m compileall -q VoiceCraft.Endstone/src VoiceCraft.Endstone/tests
+
+      - name: Validate Voice Range request ACK protocol
+        env:
+          PYTHONPATH: VoiceCraft.Endstone/src
+        run: |
+          python - <<'PY'
+          import inspect
+
+          from endstone_voicecraft import VoiceCraftEndstone
+          from endstone_voicecraft.voice_range import (
+              VoiceCraftEndstone as VoiceRangeBase,
+              VALUE_PREFIX,
+              REQUEST_PREFIX,
+              MAX_PREFIX,
+              ACK_PREFIX,
+              SYNC_PREFIX,
+          )
+
+          assert VoiceCraftEndstone.version == "0.2.14"
+          assert issubclass(VoiceCraftEndstone, VoiceRangeBase)
+
+          assert VALUE_PREFIX == "voicecraft.vr.value."
+          assert REQUEST_PREFIX == "voicecraft.vr.request."
+          assert MAX_PREFIX == "voicecraft.vr.max."
+          assert ACK_PREFIX == "voicecraft.vr.ack."
+          assert SYNC_PREFIX == "voicecraft.vr.sync."
+
+          source = inspect.getsource(VoiceRangeBase)
+
+          # New clients send request.<id>.<value>; old request.<value> remains
+          # accepted for rollback compatibility.
+          assert 'if "." in payload:' in source
+          assert 'payload.split(".", 1)' in source
+          assert "_safe_range_request_id" in source
+
+          # Every identified request gets an authoritative ACK carrying the
+          # actual server value, whether accepted or rejected.
+          assert "def _publish_range_ack" in source
+          assert '"ok" if success else "error"' in source
+          assert '"sync"' in source
+          assert "self._current_range(player)" in source
+
+          # Opening settings may explicitly request an authoritative sync.
+          assert "sync_requests" in source
+          assert "SYNC_PREFIX" in source
+
+          # Join clears stale request/ACK/sync protocol tags.
+          join_source = inspect.getsource(VoiceRangeBase.handle_player_join)
+          assert "REQUEST_PREFIX" in join_source
+          assert "ACK_PREFIX" in join_source
+          assert "SYNC_PREFIX" in join_source
+
+          # Existing value/max publication remains for backward compatibility.
+          publish_source = inspect.getsource(VoiceRangeBase._publish_tags)
+          assert "VALUE_PREFIX" in publish_source
+          assert "MAX_PREFIX" in publish_source
+
+          print("Endstone 0.2.14 Voice Range ACK protocol OK")
+          PY
+
+      - name: Build wheel
+        working-directory: VoiceCraft.Endstone
+        run: python -m build --wheel
+
+      - name: Validate wheel and installed entrypoint
+        working-directory: VoiceCraft.Endstone
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import glob
+          import zipfile
+
+          wheels = glob.glob("dist/*.whl")
+          assert len(wheels) == 1, wheels
+          wheel = wheels[0]
+          assert "0.2.14" in wheel, wheel
+
+          with zipfile.ZipFile(wheel) as zf:
+              names = set(zf.namelist())
+              assert "endstone_voicecraft/voice_range.py" in names
+              assert "endstone_voicecraft/ddui_bind.py" in names
+              metadata_name = next(name for name in names if name.endswith(".dist-info/METADATA"))
+              metadata = zf.read(metadata_name).decode("utf-8")
+              assert "Version: 0.2.14" in metadata
+          print("Validated", wheel)
+          PY
+
+          python -m pip install --no-deps --force-reinstall dist/*.whl
+          python - <<'PY'
+          from endstone_voicecraft import VoiceCraftEndstone
+          from endstone_voicecraft.voice_range import ACK_PREFIX, SYNC_PREFIX
+
+          assert VoiceCraftEndstone.version == "0.2.14"
+          assert ACK_PREFIX == "voicecraft.vr.ack."
+          assert SYNC_PREFIX == "voicecraft.vr.sync."
+          print("Installed Endstone 0.2.14 wheel import OK")
+          PY
+
+      - name: Upload Endstone 0.2.14 wheel
+        uses: actions/upload-artifact@v4
+        with:
+          name: VoiceCraft-Endstone-0.2.14-Voice-Range-ACK
+          if-no-files-found: error
+          path: VoiceCraft.Endstone/dist/*.whl

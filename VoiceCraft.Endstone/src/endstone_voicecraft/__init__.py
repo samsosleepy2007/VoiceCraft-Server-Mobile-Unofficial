@@ -1,3 +1,3 @@
-from .voice_range import VoiceCraftEndstone
+from .ddui_bind import VoiceCraftEndstone
 
 __all__ = ["VoiceCraftEndstone"]

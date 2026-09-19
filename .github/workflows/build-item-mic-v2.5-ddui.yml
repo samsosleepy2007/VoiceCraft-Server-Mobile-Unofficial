@@ -1,0 +1,99 @@
+name: Build Item Mic 2.5.2 DDUI
+
+on:
+  push:
+    branches: [mcsv-endweave-v2]
+    paths:
+      - "tools/build_item_mic_addon.py"
+      - "tools/build_item_mic_voice_range_addon.py"
+      - "tools/build_item_mic_v2_5_ddui_addon.py"
+      - ".github/workflows/build-item-mic-v2.5-ddui.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "tools/build_item_mic_addon.py"
+      - "tools/build_item_mic_voice_range_addon.py"
+      - "tools/build_item_mic_v2_5_ddui_addon.py"
+      - ".github/workflows/build-item-mic-v2.5-ddui.yml"
+  workflow_dispatch:
+
+jobs:
+  build-item-mic-ddui:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install build dependency
+        run: python -m pip install pillow
+
+      - name: Compile builders
+        run: |
+          set -euo pipefail
+          python -m py_compile             tools/build_item_mic_addon.py             tools/build_item_mic_voice_range_addon.py             tools/build_item_mic_v2_5_ddui_addon.py
+
+      - name: Build Item Mic 2.5.2 DDUI
+        run: |
+          set -euo pipefail
+          mkdir -p test-assets
+          python tools/build_item_mic_v2_5_ddui_addon.py             .             test-assets/VoiceCraft_ItemMic_v2.5.2_DDUI.mcaddon
+          test -s test-assets/VoiceCraft_ItemMic_v2.5.2_DDUI.mcaddon
+
+      - name: Validate DDUI package
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf itemmic-ddui-check
+          mkdir -p itemmic-ddui-check/top itemmic-ddui-check/bp itemmic-ddui-check/rp
+          unzip -q test-assets/VoiceCraft_ItemMic_v2.5.2_DDUI.mcaddon -d itemmic-ddui-check/top
+          test -s itemmic-ddui-check/top/VoiceCraft_ItemMic_BP_v2.5.2.mcpack
+          test -s itemmic-ddui-check/top/VoiceCraft_ItemMic_RP_v2.5.2.mcpack
+          unzip -q itemmic-ddui-check/top/VoiceCraft_ItemMic_BP_v2.5.2.mcpack -d itemmic-ddui-check/bp
+          unzip -q itemmic-ddui-check/top/VoiceCraft_ItemMic_RP_v2.5.2.mcpack -d itemmic-ddui-check/rp
+
+          test "$(jq -r '.header.version | join(".")' itemmic-ddui-check/bp/manifest.json)" = "2.5.2"
+          test "$(jq -r '.header.version | join(".")' itemmic-ddui-check/rp/manifest.json)" = "2.5.2"
+          test "$(jq -r '.dependencies[] | select(.module_name=="@minecraft/server-ui") | .version' itemmic-ddui-check/bp/manifest.json)" = "2.1.0"
+
+          script=itemmic-ddui-check/bp/scripts/main.js
+          grep -Fq 'CustomForm' "$script"
+          grep -Fq 'ObservableBoolean' "$script"
+          grep -Fq 'ObservableString' "$script"
+          grep -Fq 'new CustomForm(player, "VoiceCraft • Mic Settings")' "$script"
+          grep -Fq '.textField("กำหนดระยะเอง (บล็อก)", customRange)' "$script"
+          grep -Fq 'await form.show()' "$script"
+          grep -Fq 'Loaded v2.5.2' "$script"
+          grep -Fq 'MIC_DUPLICATE_REMOVED' "$script"
+          grep -Fq 'voicecraft.vr.request.' "$script"
+          grep -Fq 'เลือกรูปแบบการเปิดและปิดไมค์' "$script"
+          grep -Fq 'Hold-to-Talk' "$script"
+          grep -Fq 'ถือ Mic เพื่อเปิดไมค์' "$script"
+          grep -Fq 'Toggle' "$script"
+          grep -Fq 'ถือ Mic หนึ่งครั้งเพื่อเปิดไมค์' "$script"
+          grep -Fq 'ปรับระยะที่เสียงของคุณจะส่งไปถึงผู้เล่นอื่นได้จากตรงนี้' "$script"
+
+          ! grep -Fq 'ActionFormData' "$script"
+          ! grep -Fq 'ModalFormData' "$script"
+          ! grep -Fq '.show(player)' "$script"
+          ! grep -Fq 'response.selection' "$script"
+          ! grep -Fq 'response.formValues' "$script"
+          ! grep -Fq 'VoiceCraft Voice Chat' "$script"
+          ! grep -Fq 'DDUI อัปเดตสถานะบนหน้าจอนี้แบบ real-time โดยไม่ต้องปิดเมนู' "$script"
+
+          test -s itemmic-ddui-check/rp/attachables/mic_off.entity.json
+          test -s itemmic-ddui-check/rp/attachables/mic_on.entity.json
+          test -s itemmic-ddui-check/rp/models/entity/voicecraft_mic_invisible.geo.json
+
+      - name: Upload Item Mic 2.5.2 DDUI test addon
+        uses: actions/upload-artifact@v4
+        with:
+          name: VoiceCraft-ItemMic-v2.5.2-DDUI-Test
+          if-no-files-found: error
+          path: test-assets/VoiceCraft_ItemMic_v2.5.2_DDUI.mcaddon

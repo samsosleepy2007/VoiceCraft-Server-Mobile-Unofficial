@@ -1,0 +1,141 @@
+name: Build Endstone 0.2.12 Direct Mic Bind
+
+on:
+  push:
+    branches: [mcsv-endweave-v2]
+    paths:
+      - "VoiceCraft.Endstone/**"
+      - ".github/workflows/build-endstone-0.2.12-direct-mic-bind.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "VoiceCraft.Endstone/**"
+      - ".github/workflows/build-endstone-0.2.12-direct-mic-bind.yml"
+  workflow_dispatch:
+
+jobs:
+  build-wheel:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install build and Endstone API
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install build "endstone==0.11.10" "aiohttp>=3.9"
+
+      - name: Compile Endstone source
+        run: python -m compileall -q VoiceCraft.Endstone/src VoiceCraft.Endstone/tests
+
+      - name: Validate reconnect and manual Bind recovery contract
+        env:
+          PYTHONPATH: VoiceCraft.Endstone/src
+        run: |
+          python - <<'PY'
+          import inspect
+
+          from endstone_voicecraft import VoiceCraftEndstone
+          from endstone_voicecraft.ddui_bind import (
+              VoiceCraftEndstone as DduiVoiceCraftEndstone,
+              BIND_DDUI_READY_TAG,
+              BIND_UI_REQUEST_PREFIX,
+              STATE_RECONNECTING,
+              STATE_REBIND_REQUIRED,
+          )
+          from endstone_voicecraft.voice_range import VoiceCraftEndstone as VoiceCraftEndstone028
+
+          assert VoiceCraftEndstone is DduiVoiceCraftEndstone
+          assert issubclass(VoiceCraftEndstone, VoiceCraftEndstone028)
+          assert VoiceCraftEndstone.version == "0.2.12"
+          assert VoiceCraftEndstone.api_version == "0.11"
+          assert VoiceCraftEndstone._RECONNECT_FORM_DELAY_TICKS == 100
+          assert BIND_DDUI_READY_TAG == "voicecraft.bind.ddui.ready"
+          assert BIND_UI_REQUEST_PREFIX == "voicecraft.bind.ui.request."
+          assert STATE_RECONNECTING == "reconnecting"
+          assert STATE_REBIND_REQUIRED == "rebind_required"
+
+          source = inspect.getsource(VoiceCraftEndstone)
+          menu_source = inspect.getsource(VoiceCraftEndstone._menu_bind)
+          disconnect_source = inspect.getsource(VoiceCraftEndstone._handle_voice_client_disconnected)
+          unbind_source = inspect.getsource(VoiceCraftEndstone._handle_unbind_result)
+
+          # /vc is a manual recovery route even during reconnecting.
+          assert 'source="vc_menu_reconnecting"' in menu_source
+          assert "STATE_RECONNECTING" in menu_source
+          assert "_request_bind_ui" in menu_source
+
+          # Disconnect messaging explicitly teaches the Mic recovery path.
+          assert "ให้กดใช้ไอเทม Mic เพื่อเชื่อมต่ออีกครั้ง" in disconnect_source
+          assert "auto reconnect grace=5s" in disconnect_source
+
+          # Timeout does NOT force-open Bind anymore. It publishes
+          # rebind_required and tells the player to use Mic or /vc.
+          assert "STATE_REBIND_REQUIRED" in disconnect_source
+          assert "_publish_bind_state" in disconnect_source
+          assert "หรือใช้ /vc > Bind Microphone" in disconnect_source
+          assert 'source="auto_rebind_timeout"' not in disconnect_source
+
+          # Manual unbind success releases stale UI suppression.
+          assert "self._auto_bind_shown.discard(player_key)" in unbind_source
+
+          # Legacy 2.6.3 addon request tags remain supported for compatibility.
+          assert "ui_requests" in source
+          assert "BIND_UI_REQUEST_PREFIX" in source
+
+          print("Endstone 0.2.12 reconnect/manual Bind contract OK")
+          PY
+
+      - name: Build wheel
+        working-directory: VoiceCraft.Endstone
+        run: python -m build --wheel
+
+      - name: Validate wheel and installed entrypoint
+        working-directory: VoiceCraft.Endstone
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import glob
+          import zipfile
+
+          wheels = glob.glob("dist/*.whl")
+          assert len(wheels) == 1, wheels
+          wheel = wheels[0]
+          assert "0.2.12" in wheel, wheel
+
+          with zipfile.ZipFile(wheel) as zf:
+              names = set(zf.namelist())
+              assert "endstone_voicecraft/ddui_bind.py" in names
+              metadata_name = next(name for name in names if name.endswith(".dist-info/METADATA"))
+              metadata = zf.read(metadata_name).decode("utf-8")
+              assert "Version: 0.2.12" in metadata
+              entry_name = next(name for name in names if name.endswith(".dist-info/entry_points.txt"))
+              entry = zf.read(entry_name).decode("utf-8")
+              assert "voicecraft = endstone_voicecraft:VoiceCraftEndstone" in entry
+          print("Validated", wheel)
+          PY
+
+          python -m pip install --no-deps --force-reinstall dist/*.whl
+          python - <<'PY'
+          from endstone_voicecraft import VoiceCraftEndstone
+          assert VoiceCraftEndstone.version == "0.2.12"
+          assert hasattr(VoiceCraftEndstone, "_request_bind_ui")
+          assert hasattr(VoiceCraftEndstone, "_handle_voice_client_disconnected")
+          assert VoiceCraftEndstone._RECONNECT_FORM_DELAY_TICKS == 100
+          print("Installed Endstone 0.2.12 wheel import OK")
+          PY
+
+      - name: Upload Endstone 0.2.12 wheel
+        uses: actions/upload-artifact@v4
+        with:
+          name: VoiceCraft-Endstone-0.2.12-Direct-Mic-Bind
+          if-no-files-found: error
+          path: VoiceCraft.Endstone/dist/*.whl

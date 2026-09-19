@@ -180,6 +180,52 @@ class VoiceCraftEndstone(Plugin):
         xuid = str(player.xuid or "")
         return xuid if xuid else str(player.unique_id)
 
+    def _resolve_bind_player_key(self, message: dict[str, Any]) -> str:
+        """Resolve a bind result to the canonical Endstone player key.
+
+        A result carrying requestId is allowed to mutate Bind state only when
+        that requestId still matches an active pending request. This prevents a
+        late failure/success from an older Bind attempt from overwriting a newer
+        successful Bind. XUID/UUID fallback is retained only for legacy results
+        that do not carry requestId.
+        """
+        request_id = str(message.get("requestId", "") or "")
+        if request_id:
+            for player_key, pending_request in tuple(self._pending_bind_requests.items()):
+                if pending_request == request_id:
+                    return player_key
+            return ""
+
+        xuid = str(message.get("xuid", "") or "")
+        uuid_value = str(message.get("uuid", "") or "")
+
+        for player in self.server.online_players:
+            try:
+                if xuid and str(player.xuid or "") == xuid:
+                    return self._player_key(player)
+                if uuid_value and str(player.unique_id) == uuid_value:
+                    return self._player_key(player)
+            except Exception:
+                continue
+
+        if xuid:
+            if (
+                xuid in self._states
+                or xuid in self._pending_bind_keys
+                or xuid in self._pending_bind_requests
+            ):
+                return xuid
+
+        if uuid_value:
+            for player_key, state in tuple(self._states.items()):
+                try:
+                    if str(state.uuid) == uuid_value:
+                        return player_key
+                except Exception:
+                    continue
+
+        return xuid or uuid_value
+
     @staticmethod
     def _snapshot(player: Player) -> PlayerState:
         location = player.location
@@ -371,26 +417,55 @@ class VoiceCraftEndstone(Plugin):
         self.logger.info(f"BRIDGE snapshot queued players={len(self._states)}")
 
     def _handle_bind_result(self, message: dict[str, Any]) -> None:
-        request_id = str(message.get("requestId", ""))
-        xuid = str(message.get("xuid", ""))
+        request_id = str(message.get("requestId", "") or "")
+        xuid = str(message.get("xuid", "") or "")
+        uuid_value = str(message.get("uuid", "") or "")
         success = bool(message.get("success", False))
         reason = str(message.get("reason", ""))[:160]
 
-        player_key = xuid
+        player_key = self._resolve_bind_player_key(message)
+        if request_id and not player_key:
+            self.logger.info(
+                f"BIND RESULT stale ignored request={request_id[:8] or '?'} "
+                f"xuid={xuid or '?'} success={success}"
+            )
+            return
+
         if player_key:
             self._pending_bind_keys.pop(player_key, None)
             if self._pending_bind_requests.get(player_key) == request_id:
                 self._pending_bind_requests.pop(player_key, None)
 
-        target = next((p for p in self.server.online_players if str(p.xuid or "") == xuid), None)
+        target = None
+        if player_key:
+            target = next(
+                (
+                    p for p in self.server.online_players
+                    if self._player_key(p) == player_key
+                ),
+                None,
+            )
+        if target is None:
+            target = next(
+                (
+                    p for p in self.server.online_players
+                    if (xuid and str(p.xuid or "") == xuid)
+                    or (uuid_value and str(p.unique_id) == uuid_value)
+                ),
+                None,
+            )
+
         if target is not None:
             if success:
                 target.send_message("VoiceCraft: successfully bound to your voice client.")
             else:
-                target.send_error_message(f"VoiceCraft bind failed: {reason or 'binding key not found'}")
+                target.send_error_message(
+                    f"VoiceCraft bind failed: {reason or 'binding key not found'}"
+                )
 
         self.logger.info(
-            f"BIND RESULT player_xuid={xuid or '?'} request={request_id[:8] or '?'} "
+            f"BIND RESULT player_key={player_key[:12] if player_key else '?'} "
+            f"xuid={xuid or '?'} request={request_id[:8] or '?'} "
             f"success={success} reason={reason or '-'}"
         )
 

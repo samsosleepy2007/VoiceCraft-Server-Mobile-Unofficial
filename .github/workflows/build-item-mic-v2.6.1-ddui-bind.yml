@@ -1,0 +1,92 @@
+name: Build Item Mic 2.6.1 DDUI Bind
+
+on:
+  push:
+    branches: [mcsv-endweave-v2]
+    paths:
+      - "tools/build_item_mic_addon.py"
+      - "tools/build_item_mic_voice_range_addon.py"
+      - "tools/build_item_mic_v2_5_ddui_addon.py"
+      - "tools/build_item_mic_v2_5_5_ddui_addon.py"
+      - "tools/build_item_mic_v2_6_1_ddui_bind_addon.py"
+      - ".github/workflows/build-item-mic-v2.6.1-ddui-bind.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "tools/build_item_mic_addon.py"
+      - "tools/build_item_mic_voice_range_addon.py"
+      - "tools/build_item_mic_v2_5_ddui_addon.py"
+      - "tools/build_item_mic_v2_5_5_ddui_addon.py"
+      - "tools/build_item_mic_v2_6_1_ddui_bind_addon.py"
+      - ".github/workflows/build-item-mic-v2.6.1-ddui-bind.yml"
+  workflow_dispatch:
+
+jobs:
+  build-addon:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install Pillow
+        run: python -m pip install pillow
+      - name: Compile builders
+        run: |
+          set -euo pipefail
+          python -m py_compile             tools/build_item_mic_addon.py             tools/build_item_mic_voice_range_addon.py             tools/build_item_mic_v2_5_ddui_addon.py             tools/build_item_mic_v2_5_5_ddui_addon.py \
+            tools/build_item_mic_v2_6_0_ddui_bind_addon.py \
+            tools/build_item_mic_v2_6_1_ddui_bind_addon.py
+      - name: Build addon
+        run: |
+          set -euo pipefail
+          mkdir -p test-assets
+          python tools/build_item_mic_v2_6_1_ddui_bind_addon.py . test-assets/VoiceCraft_ItemMic_v2.6.1_DDUI-Bind.mcaddon
+      - name: Validate addon
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf check
+          mkdir -p check/top check/bp check/rp
+          unzip -q test-assets/VoiceCraft_ItemMic_v2.6.1_DDUI-Bind.mcaddon -d check/top
+          unzip -q check/top/VoiceCraft_ItemMic_BP_v2.6.1.mcpack -d check/bp
+          unzip -q check/top/VoiceCraft_ItemMic_RP_v2.6.1.mcpack -d check/rp
+
+          test "$(jq -r '.header.version | join(".")' check/bp/manifest.json)" = "2.6.1"
+          test "$(jq -r '.dependencies[] | select(.module_name=="@minecraft/server-ui") | .version' check/bp/manifest.json)" = "2.1.0"
+          test "$(jq -r '.dependencies[] | select(.module_name=="@minecraft/server") | .version' check/bp/manifest.json)" = "2.9.0"
+
+          script=check/bp/scripts/main.js
+          node --check "$script"
+          grep -Fq 'voicecraft.bind.ddui.ready' "$script"
+          grep -Fq 'voicecraft.bind.state.' "$script"
+          grep -Fq 'voicecraft.bind.open.' "$script"
+          grep -Fq 'voicecraft.bind.request.' "$script"
+          grep -Fq 'voicecraft.bind.error.' "$script"
+          grep -Fq 'VoiceCraft • BIND' "$script"
+          grep -Fq '.textField(' "$script"
+          grep -Fq 'description: "เชื่อมต่อเซิร์ฟเวอร์ไมค์ใน VoiceCraft ก่อน แล้วนำ Binding Key ที่แสดงมากรอกที่นี่"' "$script"
+          ! grep -Fq 'VoiceCraft • เชื่อมต่อไมโครโฟน' "$script"
+          ! grep -Fq 'ถ้า VoiceCraft หลุด ระบบจะรอเชื่อมต่อกลับอัตโนมัติก่อน และจะแจ้งให้กรอก Key ใหม่เมื่อจำเป็น' "$script"
+          grep -Fq 'เชื่อมต่อเซิร์ฟเวอร์ไมค์ใน VoiceCraft ก่อน แล้วนำ Binding Key ที่แสดงมากรอกที่นี่' "$script"
+          grep -Fq 'กำลังเชื่อมต่อกลับอัตโนมัติ' "$script"
+          grep -Fq 'Binding Key ไม่ถูกต้อง ถูกใช้ไปแล้ว หรือหมดอายุ' "$script"
+          grep -Fq 'Loaded v2.6.1' "$script"
+          ! grep -Fq 'ActionFormData' "$script"
+          ! grep -Fq 'ModalFormData' "$script"
+          ! grep -Fq 'multiButtonRow' "$script"
+
+          test -s check/rp/attachables/mic_off.entity.json
+          test -s check/rp/models/entity/voicecraft_mic_invisible.geo.json
+      - name: Confirm 2.6.0 rollback still builds
+        run: |
+          python tools/build_item_mic_v2_6_0_ddui_bind_addon.py . test-assets/VoiceCraft_ItemMic_v2.6.0_DDUI-Bind_rollback.mcaddon
+          test -s test-assets/VoiceCraft_ItemMic_v2.6.0_DDUI-Bind_rollback.mcaddon
+      - name: Upload addon
+        uses: actions/upload-artifact@v4
+        with:
+          name: VoiceCraft-ItemMic-v2.6.1-DDUI-Bind
+          path: test-assets/VoiceCraft_ItemMic_v2.6.1_DDUI-Bind.mcaddon
+          if-no-files-found: error

@@ -1,0 +1,125 @@
+name: Build Item Mic 2.5.1-beta Horizontal DDUI
+
+on:
+  push:
+    branches: [mcsv-endweave-v2]
+    paths:
+      - "tools/build_item_mic_addon.py"
+      - "tools/build_item_mic_voice_range_addon.py"
+      - "tools/build_item_mic_v2_5_ddui_addon.py"
+      - "tools/build_item_mic_v2_5_1_beta_horizontal_ddui.py"
+      - ".github/workflows/build-item-mic-v2.5.1-beta-horizontal.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "tools/build_item_mic_addon.py"
+      - "tools/build_item_mic_voice_range_addon.py"
+      - "tools/build_item_mic_v2_5_ddui_addon.py"
+      - "tools/build_item_mic_v2_5_1_beta_horizontal_ddui.py"
+      - ".github/workflows/build-item-mic-v2.5.1-beta-horizontal.yml"
+  workflow_dispatch:
+
+jobs:
+  build-horizontal-beta:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install build dependency
+        run: python -m pip install pillow
+
+      - name: Compile builders
+        run: |
+          set -euo pipefail
+          python -m py_compile \
+            tools/build_item_mic_addon.py \
+            tools/build_item_mic_voice_range_addon.py \
+            tools/build_item_mic_v2_5_ddui_addon.py \
+            tools/build_item_mic_v2_5_1_beta_horizontal_ddui.py
+
+      - name: Build horizontal beta addon
+        run: |
+          set -euo pipefail
+          mkdir -p test-assets
+          python tools/build_item_mic_v2_5_1_beta_horizontal_ddui.py \
+            . \
+            test-assets/VoiceCraft_ItemMic_v2.5.1-beta_Horizontal-DDUI.mcaddon
+          test -s test-assets/VoiceCraft_ItemMic_v2.5.1-beta_Horizontal-DDUI.mcaddon
+
+      - name: Validate horizontal beta package
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf horizontal-check
+          mkdir -p horizontal-check/top horizontal-check/bp horizontal-check/rp
+          unzip -q test-assets/VoiceCraft_ItemMic_v2.5.1-beta_Horizontal-DDUI.mcaddon -d horizontal-check/top
+
+          test -s horizontal-check/top/VoiceCraft_ItemMic_BP_v2.5.1-beta-Horizontal.mcpack
+          test -s horizontal-check/top/VoiceCraft_ItemMic_RP_v2.5.1-beta-Horizontal.mcpack
+          unzip -q horizontal-check/top/VoiceCraft_ItemMic_BP_v2.5.1-beta-Horizontal.mcpack -d horizontal-check/bp
+          unzip -q horizontal-check/top/VoiceCraft_ItemMic_RP_v2.5.1-beta-Horizontal.mcpack -d horizontal-check/rp
+
+          test "$(jq -r '.header.version | join(".")' horizontal-check/bp/manifest.json)" = "2.5.1"
+          test "$(jq -r '.header.version | join(".")' horizontal-check/rp/manifest.json)" = "2.5.1"
+
+          test "$(jq -r '.header.uuid' horizontal-check/bp/manifest.json)" = "46951783-7b21-4d1e-9ed9-5165a18291e7"
+          test "$(jq -r '.header.uuid' horizontal-check/rp/manifest.json)" = "472b0285-0ae2-4192-81be-576adbba30d3"
+
+          test "$(jq -r '.dependencies[] | select(.module_name=="@minecraft/server-ui") | .version' horizontal-check/bp/manifest.json)" = "2.1.0"
+          test "$(jq -r '.dependencies[] | select(.module_name=="@minecraft/server") | .version' horizontal-check/bp/manifest.json)" = "2.9.0"
+          test "$(jq -r '.header.min_engine_version | join(".")' horizontal-check/bp/manifest.json)" != "1.26.60"
+          ! grep -Fq '1.26.60-preview' horizontal-check/bp/manifest.json
+          test "$(jq -r '.dependencies[] | select(.uuid=="472b0285-0ae2-4192-81be-576adbba30d3") | .version | join(".")' horizontal-check/bp/manifest.json)" = "2.5.1"
+
+          script=horizontal-check/bp/scripts/main.js
+          grep -Fq 'typeof form.multiButtonRow === "function"' "$script"
+          grep -Fq 'form.multiButtonRow(buttons)' "$script"
+          grep -Fq 'const modeHorizontal = addButtonRowCompat(' "$script"
+          grep -Fq 'const rangeHorizontal = addButtonRowCompat(' "$script"
+          grep -Fq 'HORIZONTAL_UNAVAILABLE' "$script"
+          grep -Fq 'using vertical fallback' "$script"
+          grep -Fq 'label: "Hold-to-Talk"' "$script"
+          grep -Fq 'label: "Toggle"' "$script"
+          grep -Fq 'label: "5 บล็อก"' "$script"
+          grep -Fq 'label: "10 บล็อก"' "$script"
+          grep -Fq 'label: "20 บล็อก"' "$script"
+          grep -Fq 'options: { disabled: holdDisabled }' "$script"
+          grep -Fq 'options: { disabled: toggleDisabled }' "$script"
+          grep -Fq 'Loaded v2.5.1-beta' "$script"
+
+          grep -Fq 'form.button(button.label, button.onClick, button.options)' "$script"
+
+          test -s horizontal-check/rp/attachables/mic_off.entity.json
+          test -s horizontal-check/rp/attachables/mic_on.entity.json
+          test -s horizontal-check/rp/models/entity/voicecraft_mic_invisible.geo.json
+
+      - name: Confirm stable 2.5.2 builder stays stable
+        shell: bash
+        run: |
+          set -euo pipefail
+          python tools/build_item_mic_v2_5_ddui_addon.py \
+            . \
+            test-assets/VoiceCraft_ItemMic_v2.5.2_DDUI_stable-check.mcaddon
+
+          rm -rf stable-check
+          mkdir -p stable-check/top stable-check/bp
+          unzip -q test-assets/VoiceCraft_ItemMic_v2.5.2_DDUI_stable-check.mcaddon -d stable-check/top
+          unzip -q stable-check/top/VoiceCraft_ItemMic_BP_v2.5.2.mcpack -d stable-check/bp
+
+          test "$(jq -r '.dependencies[] | select(.module_name=="@minecraft/server-ui") | .version' stable-check/bp/manifest.json)" = "2.1.0"
+          ! grep -Fq '.multiButtonRow([' stable-check/bp/scripts/main.js
+
+      - name: Upload horizontal beta addon
+        uses: actions/upload-artifact@v4
+        with:
+          name: VoiceCraft-ItemMic-v2.5.1-beta-Horizontal-DDUI
+          if-no-files-found: error
+          path: test-assets/VoiceCraft_ItemMic_v2.5.1-beta_Horizontal-DDUI.mcaddon

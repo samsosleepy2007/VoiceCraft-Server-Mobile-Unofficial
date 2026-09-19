@@ -1,0 +1,145 @@
+name: Build Item Mic 2.6.6 Voice Range ACK
+
+on:
+  push:
+    branches: [mcsv-endweave-v2]
+    paths:
+      - "tools/build_item_mic_addon.py"
+      - "tools/build_item_mic_voice_range_addon.py"
+      - "tools/build_item_mic_v2_5_ddui_addon.py"
+      - "tools/build_item_mic_v2_5_5_ddui_addon.py"
+      - "tools/build_item_mic_v2_6_5_ddui_bind_addon.py"
+      - "tools/build_item_mic_v2_6_6_ddui_bind_addon.py"
+      - ".github/workflows/build-item-mic-v2.6.6-voice-range-ack.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "tools/build_item_mic_addon.py"
+      - "tools/build_item_mic_voice_range_addon.py"
+      - "tools/build_item_mic_v2_5_ddui_addon.py"
+      - "tools/build_item_mic_v2_5_5_ddui_addon.py"
+      - "tools/build_item_mic_v2_6_5_ddui_bind_addon.py"
+      - "tools/build_item_mic_v2_6_6_ddui_bind_addon.py"
+      - ".github/workflows/build-item-mic-v2.6.6-voice-range-ack.yml"
+  workflow_dispatch:
+
+jobs:
+  build-addon:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Pillow
+        run: python -m pip install pillow
+
+      - name: Compile builders
+        run: |
+          set -euo pipefail
+          python -m py_compile             tools/build_item_mic_addon.py             tools/build_item_mic_voice_range_addon.py             tools/build_item_mic_v2_5_ddui_addon.py             tools/build_item_mic_v2_5_5_ddui_addon.py             tools/build_item_mic_v2_6_5_ddui_bind_addon.py             tools/build_item_mic_v2_6_6_ddui_bind_addon.py
+
+      - name: Build addon
+        run: |
+          set -euo pipefail
+          mkdir -p test-assets
+          python tools/build_item_mic_v2_6_6_ddui_bind_addon.py             .             test-assets/VoiceCraft_ItemMic_v2.6.6_DDUI-Bind.mcaddon
+          test -s test-assets/VoiceCraft_ItemMic_v2.6.6_DDUI-Bind.mcaddon
+
+      - name: Validate authoritative Voice Range ACK flow
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf check
+          mkdir -p check/top check/bp check/rp
+
+          unzip -q test-assets/VoiceCraft_ItemMic_v2.6.6_DDUI-Bind.mcaddon -d check/top
+          unzip -q check/top/VoiceCraft_ItemMic_BP_v2.6.6.mcpack -d check/bp
+          unzip -q check/top/VoiceCraft_ItemMic_RP_v2.6.6.mcpack -d check/rp
+
+          test "$(jq -r '.header.version | join(".")' check/bp/manifest.json)" = "2.6.6"
+          test "$(jq -r '.header.version | join(".")' check/rp/manifest.json)" = "2.6.6"
+          test "$(jq -r '.dependencies[] | select(.module_name=="@minecraft/server-ui") | .version' check/bp/manifest.json)" = "2.1.0"
+          test "$(jq -r '.dependencies[] | select(.module_name=="@minecraft/server") | .version' check/bp/manifest.json)" = "2.9.0"
+
+          script=check/bp/scripts/main.js
+          node --check "$script"
+
+          grep -Fq 'voicecraft.vr.ack.' "$script"
+          grep -Fq 'voicecraft.vr.sync.' "$script"
+          grep -Fq 'function nextRangeRequestId()' "$script"
+          grep -Fq 'function consumeVoiceRangeAck(player, requestId)' "$script"
+          grep -Fq 'function requestVoiceRangeSync(player)' "$script"
+          grep -Fq '${RANGE_REQUEST_PREFIX}${requestId}.${value}' "$script"
+          grep -Fq 'pendingRequestId' "$script"
+          grep -Fq 'confirmedRange' "$script"
+          grep -Fq 'ack.status === "ok"' "$script"
+          grep -Fq 'เซิร์ฟเวอร์ยืนยันแล้ว' "$script"
+          grep -Fq 'เซิร์ฟเวอร์ไม่รับค่าที่ขอ' "$script"
+          grep -Fq 'Voice Range DDUI refresh failed' "$script"
+          grep -Fq 'Loaded v2.6.6' "$script"
+
+          python - <<'PY'
+          from pathlib import Path
+
+          text = Path("check/bp/scripts/main.js").read_text(encoding="utf-8")
+
+          request_start = text.index("function requestVoiceRange(player, value)")
+          request_end = text.index("function applyMicModeFromUi", request_start)
+          request_body = text[request_start:request_end]
+
+          # Never optimistically persist the requested value before ACK.
+          assert "player.setDynamicProperty(PROP_VOICE_RANGE, value)" not in request_body
+          assert "RANGE_REQUEST_PREFIX" in request_body
+          assert "requestId" in request_body
+
+          settings_start = text.index("async function showSettings(player)")
+          settings_end = text.index("system.beforeEvents.startup.subscribe", settings_start)
+          settings = text[settings_start:settings_end]
+
+          # All preset/slider/custom/reset routes still converge on submitRange,
+          # which now tracks one request ID and waits for its matching ACK.
+          assert "pendingRequestId = requestId;" in settings
+          assert "consumeVoiceRangeAck(player, pendingRequestId)" in settings
+          assert "consumeVoiceRangeAck(player, syncRequestId)" in settings
+          assert "requestVoiceRangeSync(player)" in settings
+          assert "confirmedRange = ack.value;" in settings
+          assert "player.setDynamicProperty(PROP_VOICE_RANGE, confirmedRange);" in settings
+
+          # The old heuristic that guessed confirmation by comparing value tags
+          # must not survive in the current DDUI.
+          assert "confirmedServerRange === pendingRange" not in settings
+          assert "syncVoiceRangeFromServer(player);\n        const refreshed" not in settings
+
+          # Bind behavior accepted in 2.6.5 remains intact.
+          assert "function openBindFromMic(player)" in text
+          assert "submittedCloseRequested" in text
+          assert "bind DDUI submit-close failed" in text
+          assert "form.close();" in text
+
+          print("Item Mic 2.6.6 Voice Range ACK + stable Bind flow verified")
+          PY
+
+          ! grep -Fq 'ActionFormData' "$script"
+          ! grep -Fq 'ModalFormData' "$script"
+          ! grep -Fq 'multiButtonRow' "$script"
+
+          test -s check/rp/attachables/mic_off.entity.json
+          test -s check/rp/models/entity/voicecraft_mic_invisible.geo.json
+
+      - name: Confirm 2.6.5 rollback still builds
+        run: |
+          set -euo pipefail
+          python tools/build_item_mic_v2_6_5_ddui_bind_addon.py             .             test-assets/VoiceCraft_ItemMic_v2.6.5_DDUI-Bind_rollback.mcaddon
+          test -s test-assets/VoiceCraft_ItemMic_v2.6.5_DDUI-Bind_rollback.mcaddon
+
+      - name: Upload addon
+        uses: actions/upload-artifact@v4
+        with:
+          name: VoiceCraft-ItemMic-v2.6.6-Voice-Range-ACK
+          path: test-assets/VoiceCraft_ItemMic_v2.6.6_DDUI-Bind.mcaddon
+          if-no-files-found: error

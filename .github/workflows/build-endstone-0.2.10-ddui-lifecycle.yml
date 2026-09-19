@@ -1,0 +1,154 @@
+name: Build Endstone 0.2.10 DDUI Lifecycle
+
+on:
+  push:
+    branches: [mcsv-endweave-v2]
+    paths:
+      - "VoiceCraft.Endstone/**"
+      - ".github/workflows/build-endstone-0.2.10-ddui-lifecycle.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "VoiceCraft.Endstone/**"
+      - ".github/workflows/build-endstone-0.2.10-ddui-lifecycle.yml"
+  workflow_dispatch:
+
+jobs:
+  build-wheel:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install build and Endstone API
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install build "endstone==0.11.10" "aiohttp>=3.9"
+
+      - name: Compile Endstone source
+        run: python -m compileall -q VoiceCraft.Endstone/src VoiceCraft.Endstone/tests
+
+      - name: Validate DDUI lifecycle and reconnect contract
+        env:
+          PYTHONPATH: VoiceCraft.Endstone/src
+        run: |
+          python - <<'PY'
+          import inspect
+          from endstone_voicecraft import VoiceCraftEndstone
+          from endstone_voicecraft.ddui_bind import (
+              VoiceCraftEndstone as DduiVoiceCraftEndstone,
+              BIND_DDUI_READY_TAG,
+              BIND_STATE_PREFIX,
+              BIND_OPEN_PREFIX,
+              BIND_REQUEST_PREFIX,
+              BIND_ERROR_PREFIX,
+              BIND_UI_CLOSED_PREFIX,
+              STATE_BOUND,
+              STATE_RECONNECTING,
+              STATE_REBIND_REQUIRED,
+          )
+          from endstone_voicecraft.voice_range import VoiceCraftEndstone as VoiceCraftEndstone028
+
+          assert VoiceCraftEndstone is DduiVoiceCraftEndstone
+          assert issubclass(VoiceCraftEndstone, VoiceCraftEndstone028)
+          assert VoiceCraftEndstone.version == "0.2.10"
+          assert VoiceCraftEndstone.api_version == "0.11"
+          assert VoiceCraftEndstone._RECONNECT_FORM_DELAY_TICKS == 100
+
+          direct = VoiceCraftEndstone.__dict__
+          assert set(direct["commands"]) == {"vc"}
+          assert direct["commands"]["vc"]["usages"] == ["/vc"]
+          assert direct["permissions"]["voicecraft.command.menu"]["default"] is True
+          assert direct["permissions"]["voicecraft.command.bind"]["default"] is True
+
+          assert BIND_DDUI_READY_TAG == "voicecraft.bind.ddui.ready"
+          assert BIND_STATE_PREFIX == "voicecraft.bind.state."
+          assert BIND_OPEN_PREFIX == "voicecraft.bind.open."
+          assert BIND_REQUEST_PREFIX == "voicecraft.bind.request."
+          assert BIND_ERROR_PREFIX == "voicecraft.bind.error."
+          assert BIND_UI_CLOSED_PREFIX == "voicecraft.bind.ui.closed."
+          assert STATE_BOUND == "bound"
+          assert STATE_RECONNECTING == "reconnecting"
+          assert STATE_REBIND_REQUIRED == "rebind_required"
+
+          source = inspect.getsource(VoiceCraftEndstone)
+          # X close releases Endstone's DDUI latch.
+          assert "closed_events" in source
+          assert "self._auto_bind_shown.discard(player_key)" in source
+          assert "reopen available via /vc" in source
+          # Every real join/quit clears stale UI/session protocol tags.
+          assert "def handle_player_join" in source
+          assert "def handle_player_quit" in source
+          assert source.count("BIND_UI_CLOSED_PREFIX") >= 3
+          assert "BIND_DDUI_READY_TAG" in source
+          # Explicit /vc bind produces a fresh open token.
+          assert "Explicit /vc -> Bind always starts a fresh UI request" in source
+          assert "open_ui=True" in source
+          # Auto reconnect remains a 5-second grace period.
+          assert "auto reconnect grace=5s" in source
+          assert "_RECONNECT_FORM_DELAY_TICKS" in source
+          # Legacy form stays available when addon handshake is absent.
+          assert "ModalForm" in source or "ModalForm fallback retained" in source
+
+          assert VoiceCraftEndstone._bind_error_code(
+              {"reason": "binding key not found or already used"}
+          ) == "invalid_key"
+          print("Endstone 0.2.10 DDUI lifecycle contract OK")
+          PY
+
+      - name: Build wheel
+        working-directory: VoiceCraft.Endstone
+        run: python -m build --wheel
+
+      - name: Validate wheel and installed entrypoint
+        working-directory: VoiceCraft.Endstone
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import glob
+          import zipfile
+
+          wheels = glob.glob("dist/*.whl")
+          assert len(wheels) == 1, wheels
+          wheel = wheels[0]
+          assert "0.2.10" in wheel, wheel
+
+          with zipfile.ZipFile(wheel) as zf:
+              names = set(zf.namelist())
+              assert "endstone_voicecraft/ddui_bind.py" in names
+              metadata_name = next(name for name in names if name.endswith(".dist-info/METADATA"))
+              metadata = zf.read(metadata_name).decode("utf-8")
+              assert "Version: 0.2.10" in metadata
+              entry_name = next(name for name in names if name.endswith(".dist-info/entry_points.txt"))
+              entry = zf.read(entry_name).decode("utf-8")
+              assert "voicecraft = endstone_voicecraft:VoiceCraftEndstone" in entry
+          print("Validated", wheel)
+          PY
+
+          python -m pip install --no-deps --force-reinstall dist/*.whl
+          python - <<'PY'
+          from endstone_voicecraft import VoiceCraftEndstone
+          from endstone_voicecraft.ddui_bind import BIND_UI_CLOSED_PREFIX
+
+          assert VoiceCraftEndstone.version == "0.2.10"
+          assert hasattr(VoiceCraftEndstone, "_bind_ddui_tick")
+          assert hasattr(VoiceCraftEndstone, "handle_player_join")
+          assert hasattr(VoiceCraftEndstone, "handle_player_quit")
+          assert BIND_UI_CLOSED_PREFIX == "voicecraft.bind.ui.closed."
+          print("Installed Endstone 0.2.10 wheel import OK")
+          PY
+
+      - name: Upload Endstone 0.2.10 wheel
+        uses: actions/upload-artifact@v4
+        with:
+          name: VoiceCraft-Endstone-0.2.10-DDUI-Lifecycle
+          if-no-files-found: error
+          path: VoiceCraft.Endstone/dist/*.whl

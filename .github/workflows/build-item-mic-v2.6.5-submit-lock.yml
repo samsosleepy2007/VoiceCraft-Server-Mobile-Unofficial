@@ -1,0 +1,164 @@
+name: Build Item Mic 2.6.5 Immediate Submit Close
+
+on:
+  push:
+    branches: [mcsv-endweave-v2]
+    paths:
+      - "tools/build_item_mic_addon.py"
+      - "tools/build_item_mic_voice_range_addon.py"
+      - "tools/build_item_mic_v2_5_ddui_addon.py"
+      - "tools/build_item_mic_v2_5_5_ddui_addon.py"
+      - "tools/build_item_mic_v2_6_3_ddui_bind_addon.py"
+      - "tools/build_item_mic_v2_6_5_ddui_bind_addon.py"
+      - ".github/workflows/build-item-mic-v2.6.5-submit-lock.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "tools/build_item_mic_addon.py"
+      - "tools/build_item_mic_voice_range_addon.py"
+      - "tools/build_item_mic_v2_5_ddui_addon.py"
+      - "tools/build_item_mic_v2_5_5_ddui_addon.py"
+      - "tools/build_item_mic_v2_6_3_ddui_bind_addon.py"
+      - "tools/build_item_mic_v2_6_5_ddui_bind_addon.py"
+      - ".github/workflows/build-item-mic-v2.6.5-submit-lock.yml"
+  workflow_dispatch:
+
+jobs:
+  build-addon:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Pillow
+        run: python -m pip install pillow
+
+      - name: Compile builders
+        run: |
+          set -euo pipefail
+          python -m py_compile             tools/build_item_mic_addon.py             tools/build_item_mic_voice_range_addon.py             tools/build_item_mic_v2_5_ddui_addon.py             tools/build_item_mic_v2_5_5_ddui_addon.py             tools/build_item_mic_v2_6_3_ddui_bind_addon.py             tools/build_item_mic_v2_6_4_ddui_bind_addon.py             tools/build_item_mic_v2_6_5_ddui_bind_addon.py
+
+      - name: Build addon
+        run: |
+          set -euo pipefail
+          mkdir -p test-assets
+          python tools/build_item_mic_v2_6_5_ddui_bind_addon.py             .             test-assets/VoiceCraft_ItemMic_v2.6.5_DDUI-Bind.mcaddon
+          test -s test-assets/VoiceCraft_ItemMic_v2.6.5_DDUI-Bind.mcaddon
+
+      - name: Validate Bind immediate submit close and fallback
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf check
+          mkdir -p check/top check/bp check/rp
+
+          unzip -q test-assets/VoiceCraft_ItemMic_v2.6.5_DDUI-Bind.mcaddon -d check/top
+          unzip -q check/top/VoiceCraft_ItemMic_BP_v2.6.5.mcpack -d check/bp
+          unzip -q check/top/VoiceCraft_ItemMic_RP_v2.6.5.mcpack -d check/rp
+
+          test "$(jq -r '.header.version | join(".")' check/bp/manifest.json)" = "2.6.5"
+          test "$(jq -r '.header.version | join(".")' check/rp/manifest.json)" = "2.6.5"
+          test "$(jq -r '.dependencies[] | select(.module_name=="@minecraft/server-ui") | .version' check/bp/manifest.json)" = "2.1.0"
+          test "$(jq -r '.dependencies[] | select(.module_name=="@minecraft/server") | .version' check/bp/manifest.json)" = "2.9.0"
+
+          script=check/bp/scripts/main.js
+          node --check "$script"
+
+          grep -Fq 'VoiceCraft • BIND' "$script"
+          grep -Fq 'function openBindFromMic(player)' "$script"
+          grep -Fq 'function handleMicUse(player)' "$script"
+          grep -Fq 'const localToken = "mic_" + String(system.currentTick);' "$script"
+          grep -Fq 'showBindDdui(player, localToken);' "$script"
+          grep -Fq 'system.run(() => handleMicUse(player))' "$script"
+          grep -Fq 'const submitVisible = new ObservableBoolean(true);' "$script"
+          grep -Fq 'const inputDisabled = new ObservableBoolean(false);' "$script"
+          grep -Fq 'if (submitInFlight) return;' "$script"
+          grep -Fq 'let submittedCloseRequested = false;' "$script"
+          grep -Fq 'submittedCloseRequested = true;' "$script"
+          grep -Fq 'bind DDUI submit-close failed' "$script"
+          grep -Fq 'submitVisible.setData(false);' "$script"
+          grep -Fq 'inputDisabled.setData(true);' "$script"
+          grep -Fq '{ visible: submitVisible }' "$script"
+          grep -Fq 'disabled: inputDisabled' "$script"
+          grep -Fq 'if (state === "pending")' "$script"
+          grep -Fq 'if (state === "error")' "$script"
+          grep -Fq 'unlockSubmit();' "$script"
+          grep -Fq 'form.close();' "$script"
+          grep -Fq 'system.currentTick - submitStartedTick >= 200' "$script"
+
+          # Bound keeps normal Mic Settings; reconnecting is intentionally
+          # allowed to fall through to direct Bind instead of being blocked.
+          grep -Fq 'if (state === "bound")' "$script"
+          grep -Fq 'showSettings(player);' "$script"
+          grep -Fq 'if (state === "pending")' "$script"
+          grep -Fq 'if (state === "disconnecting")' "$script"
+
+          python - <<'PY'
+          from pathlib import Path
+          text = Path("check/bp/scripts/main.js").read_text(encoding="utf-8")
+          button_start = text.index('.button("เชื่อมต่อไมโครโฟน"')
+          button_end = text.index('}, { visible: submitVisible });', button_start)
+          button_body = text[button_start:button_end]
+          assert button_body.index("submitInFlight = true;") < button_body.index("submitBindingKey(")
+          assert button_body.index("submitVisible.setData(false);") < button_body.index("submitBindingKey(")
+          assert button_body.index("inputDisabled.setData(true);") < button_body.index("submitBindingKey(")
+          assert "submittedCloseRequested = true;" in button_body
+          assert "form.close();" in button_body
+          assert button_body.index("submitBindingKey(") < button_body.index("submittedCloseRequested = true;")
+          assert button_body.index("submittedCloseRequested = true;") < button_body.index("form.close();")
+
+          close_reason_start = text.index("const closeReason = await form.show();")
+          close_reason_end = text.index("} catch (e) {", close_reason_start)
+          close_reason_body = text[close_reason_start:close_reason_end]
+          assert 'stateAfterClose !== "bound" && !submittedCloseRequested' in close_reason_body
+
+          start = text.index("function handleMicUse(player)")
+          end = text.index("function ensureBindDduiReady", start)
+          body = text[start:end]
+          assert 'openBindFromMic(player);' in body
+          assert 'requestBindUi(player, "mic_item")' not in body
+          assert 'state === "reconnecting"' not in body, body
+          assert 'state === "rebind_required"' not in body, body
+          # There must be no automatic rebind watchdog that opens DDUI by itself.
+          assert '"rebind_watchdog"' not in text
+          bind_start = text.index("async function showBindDdui")
+          bind_end = text.index("function pollBindDdui", bind_start)
+          bind_body = text[bind_start:bind_end]
+          assert "if (form.isShowing())" not in bind_body
+          assert "form.close();" in bind_body
+          print("Direct Mic -> Bind DDUI + submit lock/close routing verified")
+          PY
+
+          grep -Fq 'voicecraft.bind.ui.closed.' "$script"
+          grep -Fq 'reportBindUiClosed' "$script"
+          grep -Fq 'form.close()' "$script"
+          grep -Fq 'ev.initialSpawn === true' "$script"
+          grep -Fq 'Loaded v2.6.5' "$script"
+
+          # Stable UI polish must remain.
+          ! grep -Fq 'VoiceCraft • เชื่อมต่อไมโครโฟน' "$script"
+          ! grep -Fq 'ถ้า VoiceCraft หลุด ระบบจะรอเชื่อมต่อกลับอัตโนมัติก่อน และจะแจ้งให้กรอก Key ใหม่เมื่อจำเป็น' "$script"
+          ! grep -Fq 'ActionFormData' "$script"
+          ! grep -Fq 'ModalFormData' "$script"
+          ! grep -Fq 'multiButtonRow' "$script"
+
+          test -s check/rp/attachables/mic_off.entity.json
+          test -s check/rp/models/entity/voicecraft_mic_invisible.geo.json
+
+      - name: Confirm 2.6.4 rollback still builds
+        run: |
+          set -euo pipefail
+          python tools/build_item_mic_v2_6_4_ddui_bind_addon.py             .             test-assets/VoiceCraft_ItemMic_v2.6.4_DDUI-Bind_rollback.mcaddon
+          test -s test-assets/VoiceCraft_ItemMic_v2.6.4_DDUI-Bind_rollback.mcaddon
+
+      - name: Upload addon
+        uses: actions/upload-artifact@v4
+        with:
+          name: VoiceCraft-ItemMic-v2.6.5-Immediate-Close
+          path: test-assets/VoiceCraft_ItemMic_v2.6.5_DDUI-Bind.mcaddon
+          if-no-files-found: error

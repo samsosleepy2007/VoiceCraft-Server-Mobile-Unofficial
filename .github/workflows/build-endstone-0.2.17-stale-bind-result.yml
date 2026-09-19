@@ -1,0 +1,168 @@
+name: Build Endstone 0.2.17 Stale Bind Result Guard
+
+on:
+  push:
+    branches: [mcsv-endweave-v2]
+    paths:
+      - "VoiceCraft.Endstone/**"
+      - ".github/workflows/build-endstone-0.2.17-stale-bind-result.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "VoiceCraft.Endstone/**"
+      - ".github/workflows/build-endstone-0.2.17-stale-bind-result.yml"
+  workflow_dispatch:
+
+jobs:
+  build-wheel:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install build and Endstone API
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install build "endstone==0.11.10" "aiohttp>=3.9"
+
+      - name: Compile Endstone source
+        run: python -m compileall -q VoiceCraft.Endstone/src VoiceCraft.Endstone/tests
+
+      - name: Validate stale Bind result protection
+        env:
+          PYTHONPATH: VoiceCraft.Endstone/src
+        run: |
+          python - <<'PY'
+          import inspect
+          from types import SimpleNamespace
+
+          from endstone_voicecraft import VoiceCraftEndstone
+          from endstone_voicecraft.plugin import VoiceCraftEndstone as Core
+          from endstone_voicecraft.auto_bind import VoiceCraftEndstone as AutoBind
+          from endstone_voicecraft.auto_rebind import VoiceCraftEndstone as AutoRebind
+          from endstone_voicecraft.ddui_bind import VoiceCraftEndstone as Ddui
+
+          assert VoiceCraftEndstone is Ddui
+          assert VoiceCraftEndstone.version == "0.2.17"
+
+          class FakePlayer:
+              def __init__(self, xuid="x1", uuid="u1"):
+                  self.xuid = xuid
+                  self.unique_id = uuid
+
+          class Harness:
+              _resolve_bind_player_key = Core._resolve_bind_player_key
+              _player_key = staticmethod(Core._player_key)
+
+          h = Harness()
+          h.server = SimpleNamespace(online_players=[FakePlayer()])
+          h._pending_bind_requests = {"x1": "req-current"}
+          h._pending_bind_keys = {"x1": "key"}
+          h._states = {}
+
+          # Current request resolves to canonical player key.
+          assert h._resolve_bind_player_key({
+              "requestId": "req-current",
+              "xuid": "x1",
+              "uuid": "u1",
+          }) == "x1"
+
+          # Critical regression: once a newer request/current Bind exists, an
+          # older result carrying its old requestId MUST NOT fall back to XUID.
+          assert h._resolve_bind_player_key({
+              "requestId": "req-old",
+              "xuid": "x1",
+              "uuid": "u1",
+              "success": False,
+          }) == ""
+
+          # Even a stale success cannot mutate the current session.
+          assert h._resolve_bind_player_key({
+              "requestId": "req-old-success",
+              "xuid": "x1",
+              "uuid": "u1",
+              "success": True,
+          }) == ""
+
+          # Legacy result without requestId may still use XUID/UUID fallback.
+          assert h._resolve_bind_player_key({
+              "xuid": "x1",
+              "uuid": "u1",
+          }) == "x1"
+
+          core_source = inspect.getsource(Core._handle_bind_result)
+          assert "BIND RESULT stale ignored" in core_source
+          assert "if request_id and not player_key:" in core_source
+          assert core_source.index("if request_id and not player_key:") < core_source.index("self._pending_bind_keys.pop")
+
+          resolver_source = inspect.getsource(Core._resolve_bind_player_key)
+          assert 'if request_id:' in resolver_source
+          assert 'return ""' in resolver_source
+
+          # Every upper Bind-result layer resolves before calling super, so the
+          # pending request mapping still exists for correlation.
+          for cls in (AutoBind, AutoRebind, Ddui):
+              source = inspect.getsource(cls._handle_bind_result)
+              assert "self._resolve_bind_player_key(message)" in source
+              assert source.index("self._resolve_bind_player_key(message)") < source.index("super()._handle_bind_result(message)")
+              assert "if not player_key" in source or "not player_key" in source
+
+          # Failure in AutoBind can only discard bound after strict resolution.
+          auto_source = inspect.getsource(AutoBind._handle_bind_result)
+          assert "self._bound_players.discard(player_key)" in auto_source
+
+          print("Endstone 0.2.17 stale Bind-result guard OK")
+          PY
+
+      - name: Build wheel
+        working-directory: VoiceCraft.Endstone
+        run: python -m build --wheel
+
+      - name: Validate wheel and installed entrypoint
+        working-directory: VoiceCraft.Endstone
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import glob
+          import zipfile
+
+          wheels = glob.glob("dist/*.whl")
+          assert len(wheels) == 1, wheels
+          wheel = wheels[0]
+          assert "0.2.17" in wheel, wheel
+
+          with zipfile.ZipFile(wheel) as zf:
+              names = set(zf.namelist())
+              assert "endstone_voicecraft/plugin.py" in names
+              assert "endstone_voicecraft/ddui_bind.py" in names
+              metadata_name = next(name for name in names if name.endswith(".dist-info/METADATA"))
+              metadata = zf.read(metadata_name).decode("utf-8")
+              assert "Version: 0.2.17" in metadata
+              core = zf.read("endstone_voicecraft/plugin.py").decode("utf-8")
+              assert "BIND RESULT stale ignored" in core
+          print("Validated", wheel)
+          PY
+
+          python -m pip install --no-deps --force-reinstall dist/*.whl
+          python - <<'PY'
+          from endstone_voicecraft import VoiceCraftEndstone
+          assert VoiceCraftEndstone.version == "0.2.17"
+          assert hasattr(VoiceCraftEndstone, "_resolve_bind_player_key")
+          assert hasattr(VoiceCraftEndstone, "_process_bind_check_requests")
+          print("Installed Endstone 0.2.17 wheel import OK")
+          PY
+
+      - name: Upload Endstone 0.2.17 wheel
+        uses: actions/upload-artifact@v4
+        with:
+          name: VoiceCraft-Endstone-0.2.17-Stale-Bind-Result-Guard
+          if-no-files-found: error
+          path: VoiceCraft.Endstone/dist/*.whl

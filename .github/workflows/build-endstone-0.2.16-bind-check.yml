@@ -1,0 +1,223 @@
+name: Build Endstone 0.2.16 Bind Check Handshake
+
+on:
+  push:
+    branches: [mcsv-endweave-v2]
+    paths:
+      - "VoiceCraft.Endstone/**"
+      - ".github/workflows/build-endstone-0.2.16-bind-check.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "VoiceCraft.Endstone/**"
+      - ".github/workflows/build-endstone-0.2.16-bind-check.yml"
+  workflow_dispatch:
+
+jobs:
+  build-wheel:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install build and Endstone API
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install build "endstone==0.11.10" "aiohttp>=3.9"
+
+      - name: Compile Endstone source
+        run: python -m compileall -q VoiceCraft.Endstone/src VoiceCraft.Endstone/tests
+
+      - name: Validate authoritative Mic Bind check handshake
+        env:
+          PYTHONPATH: VoiceCraft.Endstone/src
+        run: |
+          python - <<'PY'
+          from types import SimpleNamespace
+
+          from endstone_voicecraft import VoiceCraftEndstone
+          from endstone_voicecraft.plugin import VoiceCraftEndstone as Core
+          from endstone_voicecraft.ddui_bind import (
+              VoiceCraftEndstone as Ddui,
+              BIND_STATE_PREFIX,
+              BIND_OPEN_PREFIX,
+              BIND_CHECK_PREFIX,
+              BIND_CHECK_RESULT_PREFIX,
+              STATE_UNBOUND,
+              STATE_PENDING,
+              STATE_BOUND,
+              STATE_RECONNECTING,
+              STATE_REBIND_REQUIRED,
+              STATE_ERROR,
+              STATE_DISCONNECTING,
+          )
+
+          assert VoiceCraftEndstone is Ddui
+          assert VoiceCraftEndstone.version == "0.2.16"
+          assert BIND_CHECK_PREFIX == "voicecraft.bind.check."
+          assert BIND_CHECK_RESULT_PREFIX == "voicecraft.bind.check_result."
+
+          class FakePlayer:
+              def __init__(self, xuid="x1", uuid="u1", name="Tester", tags=()):
+                  self.xuid = xuid
+                  self.unique_id = uuid
+                  self.name = name
+                  self.scoreboard_tags = list(tags)
+
+              def add_scoreboard_tag(self, tag):
+                  if tag not in self.scoreboard_tags:
+                      self.scoreboard_tags.append(tag)
+
+              def remove_scoreboard_tag(self, tag):
+                  if tag in self.scoreboard_tags:
+                      self.scoreboard_tags.remove(tag)
+
+          class Logger:
+              def info(self, *args, **kwargs): pass
+              def warning(self, *args, **kwargs): pass
+
+          class Harness:
+              _player_key = staticmethod(Core._player_key)
+              _remove_prefixed_tags = staticmethod(Ddui._remove_prefixed_tags)
+              _safe_bind_check_id = staticmethod(Ddui._safe_bind_check_id)
+              _authoritative_bind_state = Ddui._authoritative_bind_state
+              _reconcile_bind_state_tag = Ddui._reconcile_bind_state_tag
+              _process_bind_check_requests = Ddui._process_bind_check_requests
+
+          def make_harness(tags):
+              p = FakePlayer(tags=tags)
+              h = Harness()
+              h.server = SimpleNamespace(online_players=[p])
+              h._pending_unbind_requests = {}
+              h._bound_players = set()
+              h._pending_bind_keys = {}
+              h._rebind_waiting = set()
+              h.logger = Logger()
+              return h, p
+
+          # Critical regression: local Bedrock tag says unbound, but Endstone
+          # runtime says bound. The check response MUST be bound.
+          h, p = make_harness([
+              BIND_STATE_PREFIX + STATE_UNBOUND,
+              BIND_OPEN_PREFIX + "77",
+              BIND_CHECK_PREFIX + "m100_1",
+          ])
+          h._bound_players.add("x1")
+          assert h._process_bind_check_requests(p) is True
+          assert BIND_CHECK_PREFIX + "m100_1" not in p.scoreboard_tags
+          assert BIND_CHECK_RESULT_PREFIX + "m100_1." + STATE_BOUND in p.scoreboard_tags
+          assert BIND_STATE_PREFIX + STATE_BOUND in p.scoreboard_tags
+          assert BIND_OPEN_PREFIX + "77" in p.scoreboard_tags
+
+          # Missing local state tag also resolves from runtime authority.
+          h, p = make_harness([BIND_CHECK_PREFIX + "m101_1"])
+          h._bound_players.add("x1")
+          h._process_bind_check_requests(p)
+          assert BIND_CHECK_RESULT_PREFIX + "m101_1." + STATE_BOUND in p.scoreboard_tags
+
+          # Duplicate/conflicting local state tags cannot affect the answer.
+          h, p = make_harness([
+              BIND_STATE_PREFIX + STATE_ERROR,
+              BIND_STATE_PREFIX + STATE_UNBOUND,
+              BIND_CHECK_PREFIX + "m102_1",
+          ])
+          h._bound_players.add("x1")
+          h._process_bind_check_requests(p)
+          assert BIND_CHECK_RESULT_PREFIX + "m102_1." + STATE_BOUND in p.scoreboard_tags
+
+          # Runtime transitions are answered directly.
+          scenarios = [
+              ("pending", STATE_PENDING),
+              ("reconnecting", STATE_RECONNECTING),
+              ("disconnecting", STATE_DISCONNECTING),
+          ]
+          for suffix, expected in scenarios:
+              h, p = make_harness([BIND_CHECK_PREFIX + "m_" + suffix])
+              if expected == STATE_PENDING:
+                  h._pending_bind_keys["x1"] = "key"
+              elif expected == STATE_RECONNECTING:
+                  h._rebind_waiting.add("x1")
+              elif expected == STATE_DISCONNECTING:
+                  h._pending_unbind_requests["x1"] = "req"
+              h._process_bind_check_requests(p)
+              assert (
+                  BIND_CHECK_RESULT_PREFIX + "m_" + suffix + "." + expected
+                  in p.scoreboard_tags
+              )
+
+          # UI-only recovery states remain meaningful when no live runtime
+          # ownership overrides them.
+          for expected in (STATE_REBIND_REQUIRED, STATE_ERROR, STATE_UNBOUND):
+              tags = [BIND_CHECK_PREFIX + "m_ui"]
+              if expected != STATE_UNBOUND:
+                  tags.insert(0, BIND_STATE_PREFIX + expected)
+              h, p = make_harness(tags)
+              h._process_bind_check_requests(p)
+              assert BIND_CHECK_RESULT_PREFIX + "m_ui." + expected in p.scoreboard_tags
+
+          # Request IDs are sanitized and bounded.
+          assert Ddui._safe_bind_check_id("abc-DEF_123") == "abc-DEF_123"
+          assert Ddui._safe_bind_check_id("a.b/c") == "abc"
+          assert len(Ddui._safe_bind_check_id("x" * 100)) == 48
+
+          print("Endstone 0.2.16 authoritative Bind check handshake OK")
+          PY
+
+      - name: Build wheel
+        working-directory: VoiceCraft.Endstone
+        run: python -m build --wheel
+
+      - name: Validate wheel and installed entrypoint
+        working-directory: VoiceCraft.Endstone
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import glob
+          import zipfile
+
+          wheels = glob.glob("dist/*.whl")
+          assert len(wheels) == 1, wheels
+          wheel = wheels[0]
+          assert "0.2.16" in wheel, wheel
+
+          with zipfile.ZipFile(wheel) as zf:
+              names = set(zf.namelist())
+              assert "endstone_voicecraft/ddui_bind.py" in names
+              metadata_name = next(name for name in names if name.endswith(".dist-info/METADATA"))
+              metadata = zf.read(metadata_name).decode("utf-8")
+              assert "Version: 0.2.16" in metadata
+              ddui = zf.read("endstone_voicecraft/ddui_bind.py").decode("utf-8")
+              assert "voicecraft.bind.check." in ddui
+              assert "voicecraft.bind.check_result." in ddui
+              assert "def _process_bind_check_requests" in ddui
+          print("Validated", wheel)
+          PY
+
+          python -m pip install --no-deps --force-reinstall dist/*.whl
+          python - <<'PY'
+          from endstone_voicecraft import VoiceCraftEndstone
+          from endstone_voicecraft.ddui_bind import (
+              BIND_CHECK_PREFIX,
+              BIND_CHECK_RESULT_PREFIX,
+          )
+          assert VoiceCraftEndstone.version == "0.2.16"
+          assert BIND_CHECK_PREFIX == "voicecraft.bind.check."
+          assert BIND_CHECK_RESULT_PREFIX == "voicecraft.bind.check_result."
+          assert hasattr(VoiceCraftEndstone, "_process_bind_check_requests")
+          print("Installed Endstone 0.2.16 wheel import OK")
+          PY
+
+      - name: Upload Endstone 0.2.16 wheel
+        uses: actions/upload-artifact@v4
+        with:
+          name: VoiceCraft-Endstone-0.2.16-Bind-Check-Handshake
+          if-no-files-found: error
+          path: VoiceCraft.Endstone/dist/*.whl

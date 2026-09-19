@@ -15,6 +15,8 @@ TECH_MAX = 30_000_000
 VALUE_PREFIX = "voicecraft.vr.value."
 REQUEST_PREFIX = "voicecraft.vr.request."
 MAX_PREFIX = "voicecraft.vr.max."
+ACK_PREFIX = "voicecraft.vr.ack."
+SYNC_PREFIX = "voicecraft.vr.sync."
 
 
 class VoiceCraftEndstone(VoiceCraftEndstone027):
@@ -133,26 +135,126 @@ class VoiceCraftEndstone(VoiceCraftEndstone027):
 
     def handle_player_join(self, player: Player) -> None:
         super().handle_player_join(player)
+        self._remove_range_protocol_tags(
+            player,
+            REQUEST_PREFIX,
+            ACK_PREFIX,
+            SYNC_PREFIX,
+        )
         self._sync_player(player, emit=True)
+
+    @staticmethod
+    def _remove_range_protocol_tags(player: Player, *prefixes: str) -> None:
+        try:
+            tags = tuple(player.scoreboard_tags)
+        except Exception:
+            return
+        for tag in tags:
+            if any(tag.startswith(prefix) for prefix in prefixes):
+                try:
+                    player.remove_scoreboard_tag(tag)
+                except Exception:
+                    pass
+
+    @staticmethod
+    def _safe_range_request_id(value: str) -> str:
+        return "".join(ch for ch in str(value) if ch.isalnum() or ch in "_-")[:48]
+
+    def _publish_range_ack(
+        self,
+        player: Player,
+        request_id: str,
+        status: str,
+        value: int,
+    ) -> None:
+        request_id = self._safe_range_request_id(request_id)
+        if not request_id:
+            return
+        safe_status = "".join(
+            ch for ch in str(status).lower() if ch.isalnum() or ch in "_-"
+        )[:16] or "error"
+        actual = self._current_range(player)
+        try:
+            actual = int(value)
+        except (TypeError, ValueError):
+            pass
+        actual = max(MIN_RANGE, min(TECH_MAX, actual))
+
+        ack_prefix = f"{ACK_PREFIX}{request_id}."
+        self._remove_range_protocol_tags(player, ack_prefix)
+        player.add_scoreboard_tag(
+            f"{ACK_PREFIX}{request_id}.{safe_status}.{actual}"
+        )
 
     def _voice_range_tick(self) -> None:
         for player in self.server.online_players:
             try:
-                requests = [t for t in player.scoreboard_tags if t.startswith(REQUEST_PREFIX)]
-                requested = None
-                for tag in requests:
-                    try:
-                        value = int(tag[len(REQUEST_PREFIX):])
-                        if MIN_RANGE <= value <= TECH_MAX:
-                            requested = value
-                    except ValueError:
-                        pass
+                tags = tuple(player.scoreboard_tags)
+
+                sync_requests = [
+                    tag for tag in tags if tag.startswith(SYNC_PREFIX)
+                ]
+                for tag in sync_requests:
+                    request_id = self._safe_range_request_id(
+                        tag[len(SYNC_PREFIX):].strip()
+                    )
                     player.remove_scoreboard_tag(tag)
-                if requested is not None:
-                    self._set_range(player, requested, announce=True)
+                    self._sync_player(player, emit=False)
+                    if request_id:
+                        self._publish_range_ack(
+                            player,
+                            request_id,
+                            "sync",
+                            self._current_range(player),
+                        )
+
+                requests = [
+                    tag for tag in tags if tag.startswith(REQUEST_PREFIX)
+                ]
+                for tag in requests:
+                    payload = tag[len(REQUEST_PREFIX):].strip()
+                    player.remove_scoreboard_tag(tag)
+
+                    request_id = ""
+                    raw_value = payload
+                    if "." in payload:
+                        request_id, raw_value = payload.split(".", 1)
+                        request_id = self._safe_range_request_id(request_id)
+
+                    try:
+                        requested = int(raw_value)
+                    except ValueError:
+                        requested = None
+
+                    if requested is None:
+                        if request_id:
+                            self._publish_range_ack(
+                                player,
+                                request_id,
+                                "error",
+                                self._current_range(player),
+                            )
+                        continue
+
+                    success = self._set_range(
+                        player,
+                        requested,
+                        announce=True,
+                    )
+                    if request_id:
+                        self._publish_range_ack(
+                            player,
+                            request_id,
+                            "ok" if success else "error",
+                            self._current_range(player),
+                        )
+
                 self._sync_player(player, emit=False)
             except Exception as exc:
-                self.logger.warning(f"VOICE RANGE tick failed player={player.name}: {type(exc).__name__}: {exc}")
+                self.logger.warning(
+                    f"VOICE RANGE tick failed player={player.name}: "
+                    f"{type(exc).__name__}: {exc}"
+                )
 
     def _set_range(self, player: Player, value: int, announce: bool) -> bool:
         if value < MIN_RANGE or value > TECH_MAX:
