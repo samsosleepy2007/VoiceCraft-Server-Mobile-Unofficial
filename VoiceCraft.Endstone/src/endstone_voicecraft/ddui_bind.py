@@ -13,6 +13,7 @@ BIND_OPEN_PREFIX = "voicecraft.bind.open."
 BIND_REQUEST_PREFIX = "voicecraft.bind.request."
 BIND_ERROR_PREFIX = "voicecraft.bind.error."
 BIND_UI_CLOSED_PREFIX = "voicecraft.bind.ui.closed."
+BIND_UI_REQUEST_PREFIX = "voicecraft.bind.ui.request."
 
 STATE_UNBOUND = "unbound"
 STATE_PENDING = "pending"
@@ -24,13 +25,13 @@ STATE_DISCONNECTING = "disconnecting"
 
 
 class VoiceCraftEndstone(VoiceCraftEndstone028):
-    """Endstone 0.2.10: DDUI binding lifecycle, reconnect and rebind state."""
+    """Endstone 0.2.11: unified DDUI bind request, reconnect and lifecycle state."""
 
     prefix = "VoiceCraftEndstone"
-    version = "0.2.10"
+    version = "0.2.11"
     api_version = "0.11"
     description = (
-        "VoiceCraft binding, DDUI lifecycle, auto rebind, failover, Item Mic "
+        "VoiceCraft binding, unified DDUI requests, auto rebind, failover, Item Mic "
         "and per-player voice range"
     )
     authors = ["SamSoSleepy"]
@@ -67,7 +68,7 @@ class VoiceCraftEndstone(VoiceCraftEndstone028):
         for player in self.server.online_players:
             self._publish_derived_bind_state(player)
         self.logger.info(
-            "VoiceCraft DDUI bind bridge ready; addon handshake="
+            "VoiceCraft unified DDUI bind bridge ready; addon handshake="
             f"{BIND_DDUI_READY_TAG}; ModalForm fallback retained"
         )
 
@@ -87,6 +88,7 @@ class VoiceCraftEndstone(VoiceCraftEndstone028):
             BIND_REQUEST_PREFIX,
             BIND_ERROR_PREFIX,
             BIND_UI_CLOSED_PREFIX,
+            BIND_UI_REQUEST_PREFIX,
             BIND_DDUI_READY_TAG,
         )
 
@@ -170,6 +172,54 @@ class VoiceCraftEndstone(VoiceCraftEndstone028):
             pass
         self._publish_bind_state(player, state)
 
+    def _request_bind_ui(
+        self,
+        player_key: str,
+        *,
+        state: str,
+        error: str | None = None,
+        source: str = "server",
+        allow_fallback: bool = True,
+    ) -> bool:
+        """Issue one fresh Bind UI request from any entry path."""
+        if not player_key:
+            return False
+        if player_key in self._bound_players:
+            return False
+        if player_key in self._pending_bind_keys:
+            return False
+        if player_key in self._pending_unbind_requests:
+            return False
+
+        player = self._find_online_player(player_key)
+        if player is None:
+            return False
+
+        # UI visibility is not connection state. Always release the old UI
+        # latch before producing a fresh DDUI open token.
+        self._auto_bind_shown.discard(player_key)
+        self._remove_prefixed_tags(
+            player,
+            BIND_OPEN_PREFIX,
+            BIND_UI_CLOSED_PREFIX,
+            BIND_UI_REQUEST_PREFIX,
+        )
+
+        if self._has_bind_ddui(player):
+            self._publish_bind_state(player, state, open_ui=True, error=error)
+            self._auto_bind_shown.add(player_key)
+            self.logger.info(
+                f"BIND DDUI request player={player.name} state={state} source={source}"
+            )
+            return True
+
+        if not allow_fallback:
+            return False
+
+        # Addon is optional; keep the original Endstone form as fallback.
+        super()._show_auto_bind_form(player_key)
+        return True
+
     def _open_bind_ui_or_fallback(
         self,
         player_key: str,
@@ -177,22 +227,12 @@ class VoiceCraftEndstone(VoiceCraftEndstone028):
         state: str,
         error: str | None = None,
     ) -> None:
-        player = self._find_online_player(player_key)
-        if player is None:
-            return
-
-        if self._has_bind_ddui(player):
-            self._auto_bind_shown.add(player_key)
-            self._publish_bind_state(player, state, open_ui=True, error=error)
-            self.logger.info(
-                f"BIND DDUI requested player={player.name} state={state}"
-            )
-            return
-
-        # The addon is optional. If its handshake tag is not present, retain
-        # the original Endstone ModalForm so players can still bind.
-        self._auto_bind_shown.discard(player_key)
-        super()._show_auto_bind_form(player_key)
+        self._request_bind_ui(
+            player_key,
+            state=state,
+            error=error,
+            source="auto_join",
+        )
 
     def _show_auto_bind_form(self, player_key: str) -> None:
         if player_key in self._bound_players or player_key in self._pending_bind_keys:
@@ -243,12 +283,19 @@ class VoiceCraftEndstone(VoiceCraftEndstone028):
             self._publish_bind_state(player, STATE_DISCONNECTING)
             return
 
+        if player_key in self._rebind_waiting:
+            self._publish_bind_state(player, STATE_RECONNECTING)
+            player.send_message(
+                "§e[VoiceCraft] กำลังรอ VoiceCraft เชื่อมต่อกลับอัตโนมัติ กรุณารอสักครู่...§r"
+            )
+            return
+
         if self._has_bind_ddui(player):
-            # Explicit /vc -> Bind always starts a fresh UI request, even if a
-            # previous DDUI was dismissed with X.
-            self._auto_bind_shown.discard(player_key)
-            self._auto_bind_shown.add(player_key)
-            self._publish_bind_state(player, STATE_UNBOUND, open_ui=True)
+            self._request_bind_ui(
+                player_key,
+                state=STATE_UNBOUND,
+                source="vc_menu",
+            )
             return
 
         super()._menu_bind(player)
@@ -282,15 +329,11 @@ class VoiceCraftEndstone(VoiceCraftEndstone028):
             return
 
         if self._has_bind_ddui(player):
-            # auto_bind scheduled its legacy retry before reaching this layer.
-            # Marking the player as already shown suppresses that ModalForm
-            # retry while the DDUI displays the error and accepts a new key.
-            self._auto_bind_shown.add(player_key)
-            self._publish_bind_state(
-                player,
-                STATE_ERROR,
-                open_ui=True,
+            self._request_bind_ui(
+                player_key,
+                state=STATE_ERROR,
                 error=self._bind_error_code(message),
+                source="bind_error",
             )
 
     def _handle_voice_client_disconnected(self, message: dict[str, Any]) -> None:
@@ -361,22 +404,16 @@ class VoiceCraftEndstone(VoiceCraftEndstone028):
             if online is None:
                 return
 
-            self._auto_bind_shown.discard(player_key)
-            if self._has_bind_ddui(online):
-                self._auto_bind_shown.add(player_key)
-                self._publish_bind_state(
-                    online,
-                    STATE_REBIND_REQUIRED,
-                    open_ui=True,
-                )
+            opened = self._request_bind_ui(
+                player_key,
+                state=STATE_REBIND_REQUIRED,
+                source="auto_rebind_timeout",
+            )
+            if opened:
                 online.send_message(
                     "§e[VoiceCraft] ยังเชื่อมต่อกลับไม่ได้ กรุณาเชื่อมต่อเซิร์ฟเวอร์ไมค์ใน VoiceCraft "
                     "แล้วนำ Binding Key ใหม่มากรอก§r"
                 )
-            else:
-                # Legacy fallback: invoke the existing ModalForm only when the
-                # DDUI-capable addon is not present.
-                super(VoiceCraftEndstone, self)._show_auto_bind_form(player_key)
 
         try:
             self.server.scheduler.run_task(
@@ -406,6 +443,7 @@ class VoiceCraftEndstone(VoiceCraftEndstone028):
         if player is None:
             return
         if success:
+            self._auto_bind_shown.discard(player_key)
             self._publish_bind_state(player, STATE_UNBOUND)
         elif player_key in self._bound_players:
             self._publish_bind_state(player, STATE_BOUND)
@@ -437,6 +475,47 @@ class VoiceCraftEndstone(VoiceCraftEndstone028):
                     self.logger.info(
                         f"BIND DDUI closed by player={player.name}; reopen available via /vc"
                     )
+                    tags = tuple(player.scoreboard_tags)
+
+                ui_requests = [
+                    tag for tag in tags if tag.startswith(BIND_UI_REQUEST_PREFIX)
+                ]
+                if ui_requests:
+                    request_source = "addon"
+                    for tag in ui_requests:
+                        value = tag[len(BIND_UI_REQUEST_PREFIX):].strip()
+                        if value:
+                            request_source = value[:32]
+                        player.remove_scoreboard_tag(tag)
+
+                    if player_key in self._bound_players:
+                        self._publish_bind_state(player, STATE_BOUND)
+                    elif player_key in self._pending_bind_keys:
+                        self._publish_bind_state(player, STATE_PENDING)
+                    elif player_key in self._pending_unbind_requests:
+                        self._publish_bind_state(player, STATE_DISCONNECTING)
+                    elif player_key in self._rebind_waiting:
+                        self._publish_bind_state(player, STATE_RECONNECTING)
+                    else:
+                        current_state = STATE_UNBOUND
+                        try:
+                            for tag in player.scoreboard_tags:
+                                if tag.startswith(BIND_STATE_PREFIX):
+                                    candidate = tag[len(BIND_STATE_PREFIX):]
+                                    if candidate in (
+                                        STATE_UNBOUND,
+                                        STATE_REBIND_REQUIRED,
+                                        STATE_ERROR,
+                                    ):
+                                        current_state = candidate
+                                    break
+                        except Exception:
+                            pass
+                        self._request_bind_ui(
+                            player_key,
+                            state=current_state,
+                            source=f"addon_{request_source}",
+                        )
                     tags = tuple(player.scoreboard_tags)
 
                 requests = [
